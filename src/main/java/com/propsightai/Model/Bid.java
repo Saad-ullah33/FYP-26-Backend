@@ -2,6 +2,7 @@ package com.propsightai.Model;
 
 import jakarta.persistence.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -25,7 +26,7 @@ public class Bid {
 
 
 @Column(name = "BidAmount" , nullable = false)
-    private Double amount;
+    private BigDecimal amount;
 
 @Column(name = "BidTime",nullable = false)
     private LocalDateTime bidTime ;
@@ -59,11 +60,11 @@ void prePersist() {
         this.bidder = bidder;
     }
 
-    public Double getAmount() {
+    public BigDecimal  getAmount() {
         return amount;
     }
 
-    public void setAmount(Double amount) {
+    public void setAmount(BigDecimal  amount) {
         this.amount = amount;
     }
 

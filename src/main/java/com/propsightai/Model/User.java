@@ -1,12 +1,15 @@
 package com.propsightai.Model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.propsightai.Role.AuthProvider;
 import com.propsightai.Role.Role;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 
-import java.security.AuthProvider;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "users")
@@ -14,68 +17,104 @@ public class User {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(
-            name = "UserID"
-    )
+    @Column( name = "UserID")
     private Integer id;
 
-    @Column(
-            name = "name"
-    )
+    @Column( name = "name" )
     private String name;
 
-    @Column(
-            name = "Email",
-            nullable = false, unique = true)
+    @Column( name = "Email",nullable = false, unique = true)
     private String email;
 
-    @Column(
-            name = "Password"
-    )
+    @Column(  name = "Password" )
     private String password; // null for Google users
 
-    @Column(
-            name = "PhoneNumber"
-    )
+    @Column( name = "PhoneNumber", nullable = false, unique = true )
     private String phone;
 
-    @Column(
-            name = "UserType"
-    )
-    private String userType;
-    @Column(
-            name = "Googleid"
-    )
-    private String googleid;
-    @Column(
-            name = "Auth"
-    )
-    private String auth;
-    @Column(
-            name = "Profileimg"
-    )
-    private String profile; // USER, AGENT, ADMIN
 
-        private String providerId;
+    @Enumerated(EnumType.STRING)
+    @Column(  name = "UserType" )
+    private Role userType;
+
+
+    @Column( name = "Auth" )
+    @Enumerated(EnumType.STRING)
+    private AuthProvider authProvider;
+
+    @Column( name = "Profileimg" )
+    private String profile; // USER,  ADMIN
+
+
+
+    @Column( name = "Provider_Id" )
+    private String providerId;
+
     private String image;// Google sub
 
-    @Column(
-            name = "isVerified"
-    )
+    @Column(   name = "isVerified" )
     private Boolean isVerified = false;
-    @Column(
-            name = "Address"
-    )
+
+    @Column(  name = "Address"  )
     private String address;
 
-    @Column(
-            name = "IsActive"
-    )
+    @Column( name = "IsActive" )
     private Boolean isActive = true;
 
     @CreationTimestamp
     private LocalDate createdAt;
 
+    @OneToMany(mappedBy = "user",  cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<UserSubscription> subscriptions = new ArrayList<>();
+
+    @JsonIgnore
+    @OneToMany(mappedBy = "owner",  cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<Property> properties = new ArrayList<>();
+
+    private Integer totalListings = 0;
+
+    @Column(name = "RefreshToken")
+    private String refreshToken;
+
+    @Column(name = "ResetToken")
+    private String resetToken;
+
+    @Column(name = "ResetTokenExpiry")
+    private LocalDateTime resetTokenExpiry;
+
+    @Column(name = "VerificationToken")
+    private String verificationToken;
+
+    @Column(name = "IsEmailVerified")
+    private Boolean isEmailVerified = false;
+
+    private LocalDateTime lastLogin;
+
+
+
+    public LocalDateTime getLastLogin() {
+        return lastLogin;
+    }
+
+    public void setLastLogin(LocalDateTime lastLogin) {
+        this.lastLogin = lastLogin;
+    }
+
+    public Integer getTotalListings() {
+        return totalListings;
+    }
+
+    public void setTotalListings(Integer totalListings) {
+        this.totalListings = totalListings;
+    }
+
+    public List<Property> getProperties() {
+        return properties;
+    }
+
+    public void setProperties(List<Property> properties) {
+        this.properties = properties;
+    }
 
     public Integer getId() {
         return id;
@@ -109,32 +148,68 @@ public class User {
         return phone;
     }
 
+    public void setCreatedAt(LocalDate createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public String getRefreshToken() {
+        return refreshToken;
+    }
+
+    public void setRefreshToken(String refreshToken) {
+        this.refreshToken = refreshToken;
+    }
+
+    public String getResetToken() {
+        return resetToken;
+    }
+
+    public void setResetToken(String resetToken) {
+        this.resetToken = resetToken;
+    }
+
+    public LocalDateTime getResetTokenExpiry() {
+        return resetTokenExpiry;
+    }
+
+    public void setResetTokenExpiry(LocalDateTime resetTokenExpiry) {
+        this.resetTokenExpiry = resetTokenExpiry;
+    }
+
+    public Boolean getEmailVerified() {
+        return isEmailVerified;
+    }
+
+    public void setEmailVerified(Boolean emailVerified) {
+        isEmailVerified = emailVerified;
+    }
+
+    public String getVerificationToken() {
+        return verificationToken;
+    }
+
+    public void setVerificationToken(String verificationToken) {
+        this.verificationToken = verificationToken;
+    }
+
     public void setPhone(String phone) {
         this.phone = phone;
     }
 
-    public String getUserType() {
+    public Role getUserType() {
         return userType;
     }
 
-    public void setUserType(String userType) {
+    public void setUserType(Role userType) {
         this.userType = userType;
     }
 
-    public String getGoogleid() {
-        return googleid;
+    public AuthProvider getAuthProvider() {
+        return authProvider;
     }
 
-    public void setGoogleid(String googleid) {
-        this.googleid = googleid;
-    }
-
-    public String getAuth() {
-        return auth;
-    }
-
-    public void setAuth(String auth) {
-        this.auth = auth;
+    public void setAuthProvider(AuthProvider authProvider) {
+        this.authProvider = authProvider;
     }
 
     public String getProfile() {
@@ -187,5 +262,14 @@ public class User {
 
     public LocalDate getCreatedAt() {
         return createdAt;
+    }
+
+
+    public List<UserSubscription> getSubscriptions() {
+        return subscriptions;
+    }
+
+    public void setSubscriptions(List<UserSubscription> subscriptions) {
+        this.subscriptions = subscriptions;
     }
 }

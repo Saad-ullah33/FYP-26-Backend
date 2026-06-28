@@ -1,6 +1,9 @@
 package com.propsightai.Model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.propsightai.Role.PropertyType;
+import com.propsightai.Role.PurposeType;
 import jakarta.persistence.*;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
@@ -35,36 +38,43 @@ public class Property {
             ,nullable = false
     )
     private Double price;
-    @Column(
-            name = "Purpose"
-            ,nullable = false
-    )
-    private String purpose; // BUY / RENT
-    @Column(
-            name = "Property_Type"
-            ,nullable = false
-    )
-    private String propertyType; // HOUSE, PLOT, APARTMENT
 
-    @OneToMany(mappedBy = "property", cascade = CascadeType.ALL, orphanRemoval = true,fetch = FetchType.EAGER)
-    @JsonManagedReference
+    @Enumerated(EnumType.STRING)
+    @Column( name = "Purpose",nullable = false)
+    private PurposeType purpose; // BUY / RENT
+
+
+    @Column(  name = "Property_Type",nullable = false)
+    @Enumerated(EnumType.STRING)
+    private PropertyType propertyType; // HOUSE, PLOT, APARTMENT
+
+    @OneToMany(mappedBy = "property", cascade = CascadeType.ALL, orphanRemoval = true,fetch = FetchType.LAZY)
     private List<Image> images = new ArrayList<>();
-    @Column(
-            name = "City"
-            ,nullable = false
-    )
-    private String city;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "city_id", nullable = false)
+    private City city;
     @Column(
             name = "Area"
-            ,nullable = false
     )
     private String area;
+    @Column(
+            name = "location"
+            ,nullable = false
+    )
+    private String location;
+    @Column(name = "bathrooms", nullable = false)
+    private Integer bathrooms;
+
+    @Column(name = "bedrooms", nullable = false)
+    private Integer bedrooms;
     @Column(
             name = "Address"
             ,nullable = false
     )
     private String address;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
     private User owner;
@@ -74,18 +84,39 @@ public class Property {
 
     )
     private Boolean isAvailable;
-    @Column(name = "IsAuction")
-    private Boolean isAuction = false;
 
-    @OneToMany(mappedBy = "property", fetch = FetchType.LAZY)
-    private List<Auction> auctions = new ArrayList<>();
+    @JsonIgnore
+    @OneToOne(mappedBy = "property", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private Auction auctions;
 
+    @Column
+    private boolean trending;
 
     @CreationTimestamp
     private LocalDateTime createdAt;
 
-    //getters /setters
 
+    private Boolean featured = false;
+
+    private Integer priorityRank = 0;
+
+    private Boolean auctionEnabled = false;
+
+    private Integer viewsCount = 0;
+
+    private Boolean approved = false;
+
+    private Boolean sold = false;
+
+
+
+
+//getters /setters
+
+
+    public void setId(Integer id) {
+        this.id = id;
+    }
 
     public Boolean getAvailable() {
         return isAvailable;
@@ -107,18 +138,16 @@ public class Property {
         return price;
     }
 
-    public String getPurpose() {
+    public PurposeType getPurpose() {
         return purpose;
     }
 
-    public String getPropertyType() {
+    public PropertyType getPropertyType() {
         return propertyType;
     }
 
 
-    public String getCity() {
-        return city;
-    }
+
 
     public String getArea() {
         return area;
@@ -132,12 +161,48 @@ public class Property {
         return owner;
     }
 
-    public Boolean getAuction() {
-        return isAuction;
+    public City getCity() {
+        return city;
     }
 
-    public List<Auction> getAuctions() {
+    public String getLocation() {
+        return location;
+    }
+
+    public void setLocation(String location) {
+        this.location = location;
+    }
+
+    public Integer getBathrooms() {
+        return bathrooms;
+    }
+
+    public void setBathrooms(Integer bathrooms) {
+        this.bathrooms = bathrooms;
+    }
+
+    public Integer getBedrooms() {
+        return bedrooms;
+    }
+
+    public void setBedrooms(Integer bedrooms) {
+        this.bedrooms = bedrooms;
+    }
+
+    public Auction getAuctions() {
         return auctions;
+    }
+
+    public Integer getViewsCount() {
+        return viewsCount;
+    }
+
+    public Boolean getApproved() {
+        return approved;
+    }
+
+    public Boolean getSold() {
+        return sold;
     }
 
     public LocalDateTime getCreatedAt() {
@@ -156,11 +221,11 @@ public class Property {
         this.price = price;
     }
 
-    public void setPurpose(String purpose) {
+    public void setPurpose(PurposeType purpose) {
         this.purpose = purpose;
     }
 
-    public void setPropertyType(String propertyType) {
+    public void setPropertyType(PropertyType propertyType) {
         this.propertyType = propertyType;
     }
 
@@ -172,9 +237,6 @@ public class Property {
         this.images = images;
     }
 
-    public void setCity(String city) {
-        this.city = city;
-    }
 
     public void setArea(String area) {
         this.area = area;
@@ -192,24 +254,13 @@ public class Property {
         isAvailable = available;
     }
 
-    public void setAuction(Boolean auction) {
-        isAuction = auction;
-    }
-
-
-    public void addAuction(Auction auction) {
-        auctions.add(auction);
-        auction.setProperty(this);
-    }
-
-    public void removeAuction(Auction auction) {
-        auctions.remove(auction);
-        auction.setProperty(null);
+    public void setCity(City city) {
+        this.city = city;
     }
 
     public void addImage(Image image) {
         images.add(image);
-        image.setProperty(this); // ✅ should work now
+        image.setProperty(this);
     }
 
 
@@ -218,5 +269,42 @@ public class Property {
         image.setProperty(this);
     }
 
+    public Boolean getAuctionEnabled() {
+        return auctionEnabled;
+    }
 
+    public void setAuctionEnabled(Boolean auctionEnabled) {
+        this.auctionEnabled = auctionEnabled;
+    }
+
+    public Integer getPriorityRank() {
+        return priorityRank;
+    }
+
+    public void setPriorityRank(Integer priorityRank) {
+        this.priorityRank = priorityRank;
+    }
+
+    public Boolean getFeatured() {
+        return featured;
+    }
+
+    public void setFeatured(Boolean featured) {
+        this.featured = featured;
+    }
+
+    public void setAuctions(Auction auctions) {
+        this.auctions = auctions;
+    }
+    public void setSold(Boolean sold) {
+        this.sold = sold;
+    }
+
+    public void setApproved(Boolean approved) {
+        this.approved = approved;
+    }
+
+    public void setViewsCount(Integer viewsCount) {
+        this.viewsCount = viewsCount;
+    }
 }

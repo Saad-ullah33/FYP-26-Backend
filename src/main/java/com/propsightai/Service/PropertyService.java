@@ -1,6 +1,7 @@
 package com.propsightai.Service;
 
 import com.propsightai.Model.Property;
+import com.propsightai.Role.PropertyType;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -15,4 +16,5 @@ public interface PropertyService {
     Property SaveProperty(Property property,List<MultipartFile> images);
     void deletePropertyById(Integer id);
 
+    List<Property> getByType(PropertyType type);
 }

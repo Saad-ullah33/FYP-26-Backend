@@ -1,4 +1,4 @@
-package com.propsightai.Controller;
+package com.propsightai.Controller.ImageController;
 
 import com.propsightai.Service.ImageServiceImpl;
 import lombok.RequiredArgsConstructor;

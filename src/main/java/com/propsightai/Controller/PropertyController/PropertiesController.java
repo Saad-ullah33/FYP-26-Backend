@@ -1,25 +1,33 @@
-package com.propsightai.Controller;
+package com.propsightai.Controller.PropertyController;
 
+import com.propsightai.Dto.PropertyScoreResponse;
 import com.propsightai.Model.Property;
 import com.propsightai.Repository.PropertyRepository;
+import com.propsightai.Role.PropertyType;
+import com.propsightai.Service.PropertyScoringService;
 import com.propsightai.Service.PropertyService;
 import jakarta.validation.Valid;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Optional;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/properties")
 @CrossOrigin(origins = "*")
 public class PropertiesController {
     @Autowired
-    PropertyService propertyService;
+    private PropertyRepository propertyRepository;
+    @Autowired
+   private  PropertyService propertyService;
+    @Autowired
+    private PropertyScoringService scoringService;
 
     @PostMapping(value = "/create",consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> CreateProperty(
@@ -47,18 +55,47 @@ public class PropertiesController {
         return this. propertyService.getProperties();
     }
 
-    @GetMapping("/{id}")
+    @GetMapping("/property-types")
+    public ResponseEntity<PropertyType[]> getPropertyTypes() {
+        return ResponseEntity.ok(PropertyType.values());
+    }
+
+    @GetMapping("/type/{type}")
+    public ResponseEntity<List<Property>> getPropertiesByTypePath(
+            @PathVariable String type) {
+
+        PropertyType propertyType = PropertyType.valueOf(type.toUpperCase());
+
+        List<Property> properties = propertyService.getByType(propertyType);
+
+        return ResponseEntity.ok(properties);
+    }
+
+
+
+    @GetMapping("/id/{id}")
     public ResponseEntity<Property> getPropertyById(@PathVariable Integer id)
     {
         Optional<Property> property = propertyService.getPropertyById(id);
         return property.map(ResponseEntity::ok)
-        .orElseGet(() -> ResponseEntity.notFound().build());
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    @DeleteMapping("/{id}")
+    @DeleteMapping("/id/{id}")
     public ResponseEntity<String> deleteProperty(@PathVariable Integer id) {
         propertyService.deleteProperty(id);
         return ResponseEntity.ok("Property deleted successfully");
     }
 
+
+
+
+//ai score
+@GetMapping("/{id}/score")
+public PropertyScoreResponse getScore(@PathVariable Integer id) {
+    Property property = propertyRepository.findById(id)
+            .orElseThrow(() -> new RuntimeException("Not found"));
+
+    return scoringService.calculateScore(property);
+}
 }
