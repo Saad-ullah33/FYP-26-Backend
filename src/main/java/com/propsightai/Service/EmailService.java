@@ -1,5 +1,9 @@
 package com.propsightai.Service;
 
 public interface EmailService {
-    void sendEmail(String to, String subject, String body);
+
+    void sendVerificationEmail(String email, String token);
+
+    void sendPasswordResetEmail(String email, String token);
+
 }

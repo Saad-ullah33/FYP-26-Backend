@@ -1,7 +1,9 @@
 package com.propsightai.security;
 
 import com.propsightai.Model.User;
+import com.propsightai.Role.Role;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import java.util.Collection;
@@ -21,7 +23,9 @@ public class CustomUserDetails implements UserDetails {
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of(); // later you can add ROLE_ADMIN, ROLE_USER
+        Role role = user.getUserType();
+        if (role == null) return List.of();
+        return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
     }
 
     @Override
@@ -51,6 +55,9 @@ public class CustomUserDetails implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return Boolean.TRUE.equals(user.getActive());
+        // Only ACTIVE & email-verified users are enabled
+        return user.getStatus() == com.propsightai.Role.UserStatus.ACTIVE
+                && Boolean.TRUE.equals(user.getEmailVerified())
+                && Boolean.TRUE.equals(user.getActive());
     }
 }

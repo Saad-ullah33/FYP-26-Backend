@@ -13,5 +13,9 @@ public interface AuthService {
     void forgotPassword(String email);
     void resetPassword(String token, String newPassword);
 
-    String refreshToken(String refreshToken);
+    // Rotate and return new tokens
+    AuthResponse refreshToken(String refreshToken);
+
+    // Revoke a refresh token
+    void revokeRefreshToken(String refreshToken);
 }

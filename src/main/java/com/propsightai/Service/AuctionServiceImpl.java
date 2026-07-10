@@ -27,6 +27,8 @@ public class AuctionServiceImpl implements AuctionService {
     private final PropertyRepository propertyRepository;
     private final BidRepository bidRepository;
 
+    private final com.propsightai.AuditService auditService;
+
     // ---------------- CREATE AUCTION ----------------
     @Override
     public AuctionPublicDTO createAuction(AuctionRequestDTO dto) {
@@ -62,7 +64,9 @@ public class AuctionServiceImpl implements AuctionService {
         auction.setStatus(AuctionStatus.PENDING_APPROVAL);
         auction.setCurrentHighestBid(null);
 
-        return AuctionMapper.toPublicDTO(auctionRepository.save(auction));
+        Auction saved = auctionRepository.save(auction);
+        try { auditService.record(com.propsightai.AuditEventType.AUCTION_UPDATED, null, "Auction created: " + saved.getId()); } catch (Exception ignored) {}
+        return AuctionMapper.toPublicDTO(saved);
     }
 
     // ---------------- UPDATE AUCTION ----------------
@@ -232,6 +236,37 @@ public class AuctionServiceImpl implements AuctionService {
         }
 
         auctionRepository.save(auction);
+    }
+
+    @Override
+    public int countByUser(Integer userId) {
+        return auctionRepository.countByProperty_Owner_Id(userId);
+    }
+
+    @Override
+    public int countByUserAndStatus(Integer userId, AuctionStatus status) {
+        return auctionRepository.countByProperty_Owner_IdAndStatus(userId, status);
+    }
+
+    @Override
+    public List<AuctionPublicDTO> getAuctionsByUser(Integer userId) {
+
+        List<Auction> auctions = auctionRepository.findByProperty_Owner_Id(userId);
+
+        return auctions.stream()
+                .map(AuctionMapper::toPublicDTO)
+                .toList();
+    }
+
+    @Override
+    public List<AuctionPublicDTO> getAuctionsByUserAndStatus(Integer userId, AuctionStatus status) {
+
+        List<Auction> auctions =
+                auctionRepository.findByProperty_Owner_IdAndStatus(userId, status);
+
+        return auctions.stream()
+                .map(AuctionMapper::toPublicDTO)
+                .toList();
     }
 
 

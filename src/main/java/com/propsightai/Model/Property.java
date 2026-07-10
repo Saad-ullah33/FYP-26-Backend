@@ -33,10 +33,7 @@ public class Property {
             name = "Description"
     )
     private String description;
-    @Column(
-            name = "Price"
-            ,nullable = false
-    )
+    @Column(  name = "Price",nullable = false )
     private Double price;
 
     @Enumerated(EnumType.STRING)

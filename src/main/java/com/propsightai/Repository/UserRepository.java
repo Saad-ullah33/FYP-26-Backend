@@ -14,4 +14,13 @@ public interface UserRepository extends JpaRepository<User,Integer> {
     Optional<User> findByVerificationToken(String token);
 
     Optional<User> findByResetToken(String token);
+
+    long countByStatus(com.propsightai.Role.UserStatus status);
+    Optional<User> findByRefreshToken(String refreshToken);
+
+    long countByActiveTrue();
+
+    long countByActiveFalse();
+
+    long countByEmailVerifiedTrue();
 }

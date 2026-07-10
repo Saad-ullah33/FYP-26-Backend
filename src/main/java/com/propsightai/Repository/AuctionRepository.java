@@ -17,4 +17,19 @@ public interface AuctionRepository extends JpaRepository<Auction,Integer> {
 
     List<Auction> findByStatus(AuctionStatus status);
     List<Auction> findByStatusAndEndTimeBefore(AuctionStatus status, LocalDateTime time);
+
+    long countByStatus(AuctionStatus status);
+
+    // Analytics queries
+    default long countByStatusActive() {
+        return countByStatus(AuctionStatus.ACTIVE);
+    }
+    int countByProperty_Owner_Id(Integer ownerId);
+
+    int countByProperty_Owner_IdAndStatus(Integer ownerId, AuctionStatus status);
+
+    List<Auction> findByProperty_Owner_Id(Integer ownerId);
+
+    List<Auction> findByProperty_Owner_IdAndStatus(Integer ownerId, AuctionStatus status);
 }
+

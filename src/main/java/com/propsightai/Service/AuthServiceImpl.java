@@ -5,129 +5,281 @@ import com.propsightai.Dto.LoginRequest;
 import com.propsightai.Dto.SignupRequest;
 import com.propsightai.Model.User;
 import com.propsightai.Repository.UserRepository;
+import com.propsightai.Role.AuthProvider;
+import com.propsightai.Role.Role;
+import com.propsightai.Role.UserStatus;
 import com.propsightai.Service.AuthService;
 import com.propsightai.Service.EmailService;
+import com.propsightai.security.CustomUserDetails;
 import com.propsightai.security.JwtService;
+import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
 @Service
+@RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
 
+
+    private static final Logger log =
+            LoggerFactory.getLogger(AuthServiceImpl.class);
+    private final EmailService emailService;
     @Autowired private UserRepository userRepository;
     @Autowired private JwtService jwtService;
-    @Autowired private EmailService emailService;
     @Autowired private PasswordEncoder passwordEncoder;
+    @Autowired private com.propsightai.AuditService auditService;
+    private final AuthenticationManager authenticationManager;
 
     // ================= SIGNUP =================
     @Override
     public String signup(SignupRequest request) {
 
         if (userRepository.findByEmail(request.getEmail()).isPresent()) {
-            throw new RuntimeException("Email already exists");
+            throw new RuntimeException("Email already registered.");
         }
 
         User user = new User();
+
         user.setName(request.getName());
+
         user.setEmail(request.getEmail());
 
-        user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setPhone(request.getPhone());
 
-        String verificationToken = UUID.randomUUID().toString();
-        user.setVerificationToken(verificationToken);
+        user.setPassword(
+                passwordEncoder.encode(request.getPassword())
+        );
+
+        user.setUserType(Role.USER);
+
+        user.setAuthProvider(AuthProvider.LOCAL);
+
+        user.setStatus(UserStatus.PENDING_VERIFICATION);
+
         user.setEmailVerified(false);
+
+        user.setActive(true);
+
+        user.setCreatedAt(java.time.LocalDate.now());
+
+        String verificationToken = UUID.randomUUID().toString();
+
+        user.setVerificationToken(verificationToken);
 
         userRepository.save(user);
 
-        String link = "http://localhost:3000/verify-email?token=" + verificationToken;
-
-        emailService.sendEmail(
-                user.getEmail(),
-                "Verify Your Account",
-                link
+        user.setVerificationTokenExpiry(
+                LocalDateTime.now().plusHours(24)
         );
 
-        return "Signup successful. Check email for verification.";
+        userRepository.save(user);
+
+        emailService.sendVerificationEmail(
+                user.getEmail(),
+                verificationToken
+        );
+
+        log.info("New user registered {}", user.getEmail());
+
+        return "Registration successful. Please verify your email.";
     }
 
     // ================= LOGIN =================
     @Override
     public AuthResponse login(LoginRequest request) {
 
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(
+                        request.getEmail(),
+                        request.getPassword()
+                )
+        );
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new RuntimeException("Invalid password");
-        }
+        User user =
+                userRepository.findByEmail(request.getEmail())
+                        .orElseThrow(() ->
+                                new RuntimeException("User not found"));
 
         if (!Boolean.TRUE.equals(user.getEmailVerified())) {
-            throw new RuntimeException("Email not verified");
+
+            throw new RuntimeException(
+                    "Please verify your email first."
+            );
         }
 
-        String accessToken = jwtService.generateToken(user.getEmail());
-        String refreshToken = jwtService.generateRefreshToken(user.getEmail());
+        if (user.getStatus() == UserStatus.BLOCKED) {
 
-        return new AuthResponse(accessToken, refreshToken);
+            throw new RuntimeException(
+                    "Your account has been blocked."
+            );
+        }
+
+        CustomUserDetails userDetails =
+                new CustomUserDetails(user);
+
+        String accessToken =
+                jwtService.generateAccessToken(userDetails);
+
+        String refreshToken =
+                jwtService.generateRefreshToken(userDetails);
+
+        user.setRefreshToken(refreshToken);
+
+        user.setLastLogin(LocalDateTime.now());
+
+        userRepository.save(user);
+
+        log.info("User {} logged in", user.getEmail());
+
+        return AuthResponse.builder()
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
+                .email(user.getEmail())
+                .name(user.getName())
+                .role(user.getUserType().name())
+                .emailVerified(user.getEmailVerified())
+                .active(user.getActive())
+                .build();
     }
 
     // ================= VERIFY EMAIL =================
     @Override
     public void verifyEmail(String token) {
 
-        User user = userRepository.findByVerificationToken(token)
-                .orElseThrow(() -> new RuntimeException("Invalid token"));
+        User user =
+                userRepository.findByVerificationToken(token)
+                        .orElseThrow(() ->
+                                new RuntimeException("Invalid verification token"));
+
+        if (user.getVerificationTokenExpiry()
+                .isBefore(LocalDateTime.now())) {
+
+            throw new RuntimeException(
+                    "Verification link expired."
+            );
+        }
 
         user.setEmailVerified(true);
+
+        user.setStatus(UserStatus.ACTIVE);
+
         user.setVerificationToken(null);
 
+        user.setVerificationTokenExpiry(null);
+
         userRepository.save(user);
+
     }
 
     // ================= FORGOT PASSWORD =================
     @Override
     public void forgotPassword(String email) {
 
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        User user =
+                userRepository.findByEmail(email)
+                        .orElseThrow(() ->
+                                new RuntimeException("User not found"));
 
-        String token = UUID.randomUUID().toString();
+        String token =
+                UUID.randomUUID().toString();
 
         user.setResetToken(token);
-        user.setResetTokenExpiry(LocalDateTime.now().plusMinutes(15));
+
+        user.setResetTokenExpiry(
+                LocalDateTime.now().plusMinutes(30)
+        );
 
         userRepository.save(user);
 
-        String link = "http://localhost:3000/reset-password?token=" + token;
+        emailService.sendPasswordResetEmail(
+                email,
+                token
+        );
 
-        emailService.sendEmail(email, "Reset Password", link);
     }
-
     // ================= RESET PASSWORD =================
     @Override
-    public void resetPassword(String token, String newPassword) {
+    public void resetPassword(
+            String token,
+            String newPassword
+    ) {
 
-        User user = userRepository.findByResetToken(token)
-                .orElseThrow(() -> new RuntimeException("Invalid token"));
+        User user =
+                userRepository.findByResetToken(token)
+                        .orElseThrow(() ->
+                                new RuntimeException("Invalid token"));
 
-        if (user.getResetTokenExpiry().isBefore(LocalDateTime.now())) {
-            throw new RuntimeException("Token expired");
+        if (user.getResetTokenExpiry()
+                .isBefore(LocalDateTime.now())) {
+
+            throw new RuntimeException(
+                    "Token expired."
+            );
         }
 
-        user.setPassword(passwordEncoder.encode(newPassword));
+        user.setPassword(
+                passwordEncoder.encode(newPassword)
+        );
+
         user.setResetToken(null);
+
         user.setResetTokenExpiry(null);
 
         userRepository.save(user);
-    }
 
+    }
     // ================= REFRESH TOKEN =================
     @Override
-    public String refreshToken(String refreshToken) {
-        return jwtService.extractEmail(refreshToken);
+    public AuthResponse refreshToken(String refreshToken) {
+
+        User user = userRepository.findByRefreshToken(refreshToken)
+                .orElseThrow(() ->
+                        new RuntimeException("Invalid refresh token"));
+
+        CustomUserDetails userDetails =
+                new CustomUserDetails(user);
+
+        String newAccessToken =
+                jwtService.generateAccessToken(userDetails);
+
+        String newRefreshToken =
+                jwtService.generateRefreshToken(userDetails);
+
+        user.setRefreshToken(newRefreshToken);
+
+        userRepository.save(user);
+
+        return AuthResponse.builder()
+                .accessToken(newAccessToken)
+                .refreshToken(newRefreshToken)
+                .email(user.getEmail())
+                .name(user.getName())
+                .role(user.getUserType().name())
+                .emailVerified(user.getEmailVerified())
+                .active(user.getActive())
+                .build();
+    }
+
+    @Override
+    public void revokeRefreshToken(String refreshToken) {
+
+        userRepository.findByRefreshToken(refreshToken)
+                .ifPresent(user -> {
+
+                    user.setRefreshToken(null);
+
+                    userRepository.save(user);
+
+                    log.info("User {} logged out successfully", user.getEmail());
+
+                });
+
     }
 }

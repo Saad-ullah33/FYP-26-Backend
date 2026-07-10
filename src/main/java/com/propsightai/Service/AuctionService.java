@@ -33,4 +33,12 @@ public interface AuctionService {
         List<AuctionPublicDTO> getFilteredAuctions(AuctionViewType view, AuctionStatus status);
 
         void finalizeAuction(int auctionId);
+
+    int countByUser(Integer userId);
+
+    int countByUserAndStatus(Integer userId, AuctionStatus status);
+
+    List<AuctionPublicDTO> getAuctionsByUser(Integer userId);
+
+    List<AuctionPublicDTO> getAuctionsByUserAndStatus(Integer userId, AuctionStatus status);
 }

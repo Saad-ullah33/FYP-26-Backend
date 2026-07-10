@@ -1,12 +1,19 @@
 package com.propsightai.Service;
 
+import com.propsightai.Dto.BidResponseDto;
 import com.propsightai.Model.Bid;
+
+import java.security.Principal;
 import java.util.List;
 import java.math.BigDecimal;
 
 public interface BidService {
 
-    Bid placeBid(int auctionId, int userId, BigDecimal amount);
+    BidResponseDto placeBid(
+            int auctionId,
+            BigDecimal amount,
+            Principal principal
+    );
 
     List<Bid> getAllBids();
 

@@ -2,65 +2,113 @@ package com.propsightai.security;
 
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
+import io.jsonwebtoken.security.SecurityException;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
 import java.security.Key;
+import java.util.Base64;
 import java.util.Date;
-import java.util.function.Function;
 
 @Service
 public class JwtServiceImpl implements JwtService {
 
-    private final String SECRET = "MY_SECRET_KEY_123456789_MY_SECRET_KEY_123456789";
+    @Value("${jwt.secret}")
+    private String secret;
+
+    private static final long ACCESS_TOKEN_TIME = 1000L * 60 * 15;
+    private static final long REFRESH_TOKEN_TIME = 1000L * 60 * 60 * 24 * 7;
 
     private Key getSigningKey() {
-        return Keys.hmacShaKeyFor(SECRET.getBytes());
+        byte[] keyBytes;
+
+        try {
+            keyBytes = Base64.getDecoder().decode(secret);
+        } catch (IllegalArgumentException ex) {
+            keyBytes = secret.getBytes();
+        }
+
+        return Keys.hmacShaKeyFor(keyBytes);
     }
 
-    // ================= GENERATE ACCESS TOKEN =================
     @Override
-    public String generateToken(String email) {
+    public String generateAccessToken(UserDetails userDetails) {
+
+        String role = userDetails.getAuthorities()
+                .stream()
+                .findFirst()
+                .map(GrantedAuthority::getAuthority)
+                .orElse("ROLE_USER");   // Default role
+
         return Jwts.builder()
-                .setSubject(email)
+                .setSubject(userDetails.getUsername())
+                .claim("role", role)
                 .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * 15)) // 15 min
+                .setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * 15))
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
     }
 
-    // ================= GENERATE REFRESH TOKEN =================
-    public String generateRefreshToken(String email) {
+    @Override
+    public String generateRefreshToken(UserDetails userDetails) {
+
         return Jwts.builder()
-                .setSubject(email)
+                .setSubject(userDetails.getUsername())
                 .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + 1000L * 60 * 60 * 24 * 7)) // 7 days
-                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+                // Setting token expiration to 24 Hours for stable development testing timelines
+.setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * 60 * 24))
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256 )
                 .compact();
     }
 
-    // ================= EXTRACT EMAIL =================
-    public String extractEmail(String token) {
-        return extractClaim(token, Claims::getSubject);
-    }
+    private Claims parseClaims(String token) {
 
-    // ================= GENERIC CLAIM EXTRACTOR =================
-    public <T> T extractClaim(String token, Function<Claims, T> resolver) {
-        Claims claims = Jwts.parserBuilder()
+        return Jwts.parserBuilder()
                 .setSigningKey(getSigningKey())
                 .build()
                 .parseClaimsJws(token)
                 .getBody();
-
-        return resolver.apply(claims);
     }
 
-    // ================= VALIDATION =================
-    public boolean isValid(String token, String email) {
-        return extractEmail(token).equals(email) && !isExpired(token);
+    @Override
+    public String extractEmail(String token) {
+        return parseClaims(token).getSubject();
     }
 
-    // ================= CHECK EXPIRY =================
+    @Override
+    public String extractRole(String token) {
+        return parseClaims(token).get("role", String.class);
+    }
+
+    @Override
+    public Date extractExpiration(String token) {
+        return parseClaims(token).getExpiration();
+    }
+
+    @Override
     public boolean isExpired(String token) {
-        return extractClaim(token, Claims::getExpiration).before(new Date());
+        return extractExpiration(token).before(new Date());
+    }
+
+    @Override
+    public boolean isValid(String token, UserDetails userDetails) {
+
+        try {
+
+            String email = extractEmail(token);
+
+            return email.equals(userDetails.getUsername())
+                    && !isExpired(token);
+
+        } catch (ExpiredJwtException |
+                 UnsupportedJwtException |
+                 MalformedJwtException |
+                 SecurityException |
+                 IllegalArgumentException ex) {
+
+            return false;
+        }
     }
 }

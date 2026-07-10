@@ -52,9 +52,6 @@ public class User {
 
     private String image;// Google sub
 
-    @Column(   name = "isVerified" )
-    private Boolean isVerified = false;
-
     @Column(  name = "Address"  )
     private String address;
 
@@ -64,8 +61,12 @@ public class User {
     @CreationTimestamp
     private LocalDate createdAt;
 
-    @OneToMany(mappedBy = "user",  cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    private List<UserSubscription> subscriptions = new ArrayList<>();
+    @Enumerated(EnumType.STRING)
+    @Column(name = "UserStatus")
+    private com.propsightai.Role.UserStatus status = com.propsightai.Role.UserStatus.PENDING_VERIFICATION;
+
+//    @OneToMany(mappedBy = "user",  cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+//    private List<UserSubscription> subscriptions = new ArrayList<>();
 
     @JsonIgnore
     @OneToMany(mappedBy = "owner",  cascade = CascadeType.ALL, fetch = FetchType.LAZY)
@@ -85,11 +86,15 @@ public class User {
     @Column(name = "VerificationToken")
     private String verificationToken;
 
+
+
+    @Column(name = "VerificationTokenExpiry")
+    private LocalDateTime verificationTokenExpiry;
+
     @Column(name = "IsEmailVerified")
     private Boolean isEmailVerified = false;
 
     private LocalDateTime lastLogin;
-
 
 
     public LocalDateTime getLastLogin() {
@@ -236,13 +241,6 @@ public class User {
         this.image = image;
     }
 
-    public Boolean getVerified() {
-        return isVerified;
-    }
-
-    public void setVerified(Boolean verified) {
-        isVerified = verified;
-    }
 
     public String getAddress() {
         return address;
@@ -265,11 +263,27 @@ public class User {
     }
 
 
-    public List<UserSubscription> getSubscriptions() {
-        return subscriptions;
+//    public List<UserSubscription> getSubscriptions() {
+//        return subscriptions;
+//    }
+//
+//    public void setSubscriptions(List<UserSubscription> subscriptions) {
+//        this.subscriptions = subscriptions;
+//    }
+
+    public com.propsightai.Role.UserStatus getStatus() {
+        return status;
     }
 
-    public void setSubscriptions(List<UserSubscription> subscriptions) {
-        this.subscriptions = subscriptions;
+    public void setStatus(com.propsightai.Role.UserStatus status) {
+        this.status = status;
+    }
+    public LocalDateTime getVerificationTokenExpiry() {
+        return verificationTokenExpiry;
+    }
+
+    public void setVerificationTokenExpiry(LocalDateTime verificationTokenExpiry) {
+        this.verificationTokenExpiry = verificationTokenExpiry;
     }
 }
+
