@@ -23,7 +23,6 @@ import static java.lang.Math.log;
 @Slf4j
 @RestController
 @RequestMapping("/api/properties")
-@CrossOrigin(origins = "*")
 public class PropertiesController {
     @Autowired
     private PropertyRepository propertyRepository;

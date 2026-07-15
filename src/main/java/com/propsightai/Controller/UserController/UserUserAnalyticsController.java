@@ -22,7 +22,6 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/user/analytics")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class UserUserAnalyticsController {
 
     private final UserRepository userRepository;

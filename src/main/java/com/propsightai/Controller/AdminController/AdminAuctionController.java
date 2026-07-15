@@ -16,7 +16,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/admin/auctions")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 @PreAuthorize("hasRole('ROLE_ADMIN')")// Restricts this workspace entirely to Admin accounts
 public class AdminAuctionController {
 

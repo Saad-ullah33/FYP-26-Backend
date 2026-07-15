@@ -20,7 +20,6 @@ import java.io.IOException;
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class AuthController {
 
     private final AuthService authService;

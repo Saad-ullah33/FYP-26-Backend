@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.*;
 @Slf4j
 @RestController
 @RequestMapping("/api/search")
-@CrossOrigin(origins = "*")
 public class SearchController {
 
     @Autowired

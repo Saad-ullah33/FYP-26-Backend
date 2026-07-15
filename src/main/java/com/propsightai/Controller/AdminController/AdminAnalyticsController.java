@@ -19,7 +19,6 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/admin/analytics")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 @PreAuthorize("hasRole('ROLE_ADMIN')") // Role-based security boundary handshake enforced at class level
 public class AdminAnalyticsController {
 

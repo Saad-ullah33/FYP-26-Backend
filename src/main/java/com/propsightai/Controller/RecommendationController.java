@@ -17,7 +17,6 @@ import java.util.Optional;
 @Slf4j
 @RestController
 @RequestMapping("/api/recommendations")
-@CrossOrigin(origins = "*")
 public class RecommendationController {
 
     @Autowired

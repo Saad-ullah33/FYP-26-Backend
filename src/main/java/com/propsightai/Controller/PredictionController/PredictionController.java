@@ -19,7 +19,6 @@ import java.util.Map;
 @Slf4j
 @RestController
 @RequestMapping("/api/predictions")
-@CrossOrigin(origins = "*")
 public class PredictionController {
 
     @Autowired

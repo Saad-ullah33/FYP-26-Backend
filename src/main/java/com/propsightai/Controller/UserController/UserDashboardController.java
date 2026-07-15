@@ -24,7 +24,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/user/dashboard")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class UserDashboardController {
 
     private final UserRepository userRepository;

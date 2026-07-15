@@ -18,7 +18,7 @@ import java.security.Principal;
 
 @RestController
 @RequestMapping("/api/bid")
-@CrossOrigin(origins = "*")
+
 public class BidController {
 
 
