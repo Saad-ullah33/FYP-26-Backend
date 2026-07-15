@@ -1,4 +1,4 @@
-package com.propsightai.Service.Impl;
+package com.propsightai.Service;
 
 import com.propsightai.Service.EmailService;
 import lombok.RequiredArgsConstructor;

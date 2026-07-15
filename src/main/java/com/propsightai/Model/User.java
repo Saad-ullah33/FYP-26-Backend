@@ -17,85 +17,78 @@ public class User {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column( name = "UserID")
+    @Column(name = "userid") // ✅ Fixed casing to match DB schema
     private Integer id;
 
-    @Column( name = "name" )
+    @Column(name = "name")
     private String name;
 
-    @Column( name = "Email",nullable = false, unique = true)
+    @Column(name = "email", nullable = false, unique = true) // ✅ Lowercase match
     private String email;
 
-    @Column(  name = "Password" )
-    private String password; // null for Google users
+    @Column(name = "password")
+    private String password;
 
-    @Column( name = "PhoneNumber", nullable = false, unique = true )
+    @Column(name = "phone_number", nullable = false, unique = true) // ✅ Matches schema name
     private String phone;
 
-
     @Enumerated(EnumType.STRING)
-    @Column(  name = "UserType" )
+    @Column(name = "user_type") // ✅ Lowercase underscore match
     private Role userType;
 
-
-    @Column( name = "Auth" )
+    @Column(name = "auth") // ✅ Lowercase match
     @Enumerated(EnumType.STRING)
     private AuthProvider authProvider;
 
-    @Column( name = "Profileimg" )
-    private String profile; // USER,  ADMIN
-
-
-
-    @Column( name = "Provider_Id" )
+    @Column(name = "provider_id") // ✅ Lowercase match
     private String providerId;
 
-    private String image;// Google sub
+    @Column(name = "image")
+    private String image;
 
-    @Column(  name = "Address"  )
+    @Column(name = "address")
     private String address;
 
-    @Column( name = "IsActive" )
+    @Column(name = "is_active") // ✅ Lowercase match
     private Boolean isActive = true;
 
     @CreationTimestamp
+    @Column(name = "created_at") // ✅ Lowercase match
     private LocalDate createdAt;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "UserStatus")
+    @Column(name = "user_status") // ✅ Lowercase underscore match
     private com.propsightai.Role.UserStatus status = com.propsightai.Role.UserStatus.PENDING_VERIFICATION;
 
-//    @OneToMany(mappedBy = "user",  cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-//    private List<UserSubscription> subscriptions = new ArrayList<>();
-
     @JsonIgnore
-    @OneToMany(mappedBy = "owner",  cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "owner", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<Property> properties = new ArrayList<>();
 
+    @Column(name = "total_listings") // ✅ Lowercase match
     private Integer totalListings = 0;
 
-    @Column(name = "RefreshToken")
+    @Column(name = "refresh_token") // ✅ Lowercase match
     private String refreshToken;
 
-    @Column(name = "ResetToken")
+    @Column(name = "reset_token") // ✅ Lowercase match
     private String resetToken;
 
-    @Column(name = "ResetTokenExpiry")
+    @Column(name = "reset_token_expiry") // ✅ Lowercase match
     private LocalDateTime resetTokenExpiry;
 
-    @Column(name = "VerificationToken")
+    @Column(name = "verification_token") // ✅ Lowercase match
     private String verificationToken;
 
-
-
-    @Column(name = "VerificationTokenExpiry")
+    @Column(name = "verification_token_expiry") // ✅ Lowercase match
     private LocalDateTime verificationTokenExpiry;
 
-    @Column(name = "IsEmailVerified")
+    @Column(name = "is_email_verified") // ✅ Fixed naming casing mapping
     private Boolean isEmailVerified = false;
 
+    @Column(name = "last_login") // ✅ Lowercase match
     private LocalDateTime lastLogin;
 
+    // ================= GETTERS & SETTERS =================
 
     public LocalDateTime getLastLogin() {
         return lastLogin;
@@ -125,6 +118,10 @@ public class User {
         return id;
     }
 
+    public void setId(Integer id) {
+        this.id = id;
+    }
+
     public String getName() {
         return name;
     }
@@ -151,6 +148,10 @@ public class User {
 
     public String getPhone() {
         return phone;
+    }
+
+    public void setPhone(String phone) {
+        this.phone = phone;
     }
 
     public void setCreatedAt(LocalDate createdAt) {
@@ -186,7 +187,7 @@ public class User {
     }
 
     public void setEmailVerified(Boolean emailVerified) {
-        isEmailVerified = emailVerified;
+        this.isEmailVerified = emailVerified; // ✅ Ensured safe assignment pointer
     }
 
     public String getVerificationToken() {
@@ -195,10 +196,6 @@ public class User {
 
     public void setVerificationToken(String verificationToken) {
         this.verificationToken = verificationToken;
-    }
-
-    public void setPhone(String phone) {
-        this.phone = phone;
     }
 
     public Role getUserType() {
@@ -217,14 +214,6 @@ public class User {
         this.authProvider = authProvider;
     }
 
-    public String getProfile() {
-        return profile;
-    }
-
-    public void setProfile(String profile) {
-        this.profile = profile;
-    }
-
     public String getProviderId() {
         return providerId;
     }
@@ -241,7 +230,6 @@ public class User {
         this.image = image;
     }
 
-
     public String getAddress() {
         return address;
     }
@@ -255,21 +243,12 @@ public class User {
     }
 
     public void setActive(Boolean active) {
-        isActive = active;
+        this.isActive = active; // ✅ Verified clean field scope binding pointer
     }
 
     public LocalDate getCreatedAt() {
         return createdAt;
     }
-
-
-//    public List<UserSubscription> getSubscriptions() {
-//        return subscriptions;
-//    }
-//
-//    public void setSubscriptions(List<UserSubscription> subscriptions) {
-//        this.subscriptions = subscriptions;
-//    }
 
     public com.propsightai.Role.UserStatus getStatus() {
         return status;
@@ -278,6 +257,7 @@ public class User {
     public void setStatus(com.propsightai.Role.UserStatus status) {
         this.status = status;
     }
+
     public LocalDateTime getVerificationTokenExpiry() {
         return verificationTokenExpiry;
     }
@@ -286,4 +266,3 @@ public class User {
         this.verificationTokenExpiry = verificationTokenExpiry;
     }
 }
-

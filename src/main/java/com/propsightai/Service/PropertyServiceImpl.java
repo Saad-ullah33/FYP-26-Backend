@@ -299,6 +299,16 @@ public class PropertyServiceImpl implements PropertyService {
         return propertyRepository.save(property);
     }
 
+    @Override
+    public void verifyPropertyOwnership(Integer id, Integer id1) {
+        Property property = propertyRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Property not found"));
+
+        if (!property.getOwner().getId().equals(id1)) {
+            throw new RuntimeException("Unauthorized: Ownership validation mismatch.");
+        }
+    }
+
     private PropertyDto mapToDto(Property property) {
         PropertyDto dto = new PropertyDto();
 

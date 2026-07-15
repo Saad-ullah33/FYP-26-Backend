@@ -30,7 +30,8 @@ public class Property {
     private String title;
 
     @Column(
-            name = "Description"
+            name = "Description",
+            columnDefinition = "TEXT"
     )
     private String description;
     @Column(  name = "Price",nullable = false )

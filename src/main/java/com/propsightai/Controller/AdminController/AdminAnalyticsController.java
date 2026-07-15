@@ -5,8 +5,8 @@ import com.propsightai.Dto.PropertyAnalytics;
 import com.propsightai.Dto.SystemStats;
 import com.propsightai.Dto.UserAnalytics;
 import com.propsightai.Service.AnalyticsService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -18,71 +18,63 @@ import java.util.Map;
 @Slf4j
 @RestController
 @RequestMapping("/api/admin/analytics")
+@RequiredArgsConstructor
 @CrossOrigin(origins = "*")
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasRole('ROLE_ADMIN')") // Role-based security boundary handshake enforced at class level
 public class AdminAnalyticsController {
 
-    @Autowired
-    private AnalyticsService analyticsService;
+    private final AnalyticsService analyticsService;
 
     /**
-     * Get system-wide statistics.
-     * GET /api/admin/analytics/system-stats
+     * Returns high-level operational statistics (Total Users, DAU, Total Properties, Estimated Revenue)
+     * primarily used for the main Admin KPI dashboard grid.
      */
     @GetMapping("/system-stats")
     public ResponseEntity<SystemStats> getSystemStats() {
-        log.info("Admin retrieving system statistics");
-        SystemStats stats = analyticsService.getSystemStats();
-        return ResponseEntity.ok(stats);
+        log.info("Admin Request: Fetching global system stat metrics grid.");
+        return ResponseEntity.ok(analyticsService.getSystemStats());
     }
 
     /**
-     * Get most viewed properties.
-     * GET /api/admin/analytics/most-viewed?limit=10&days=30
+     * Returns properties sorted by popularity metrics (views/interactions) across a dynamic timeline window.
      */
     @GetMapping("/most-viewed")
     public ResponseEntity<List<PropertyAnalytics>> getMostViewedProperties(
-            @RequestParam(required = false, defaultValue = "10") Integer limit,
-            @RequestParam(required = false, defaultValue = "30") Integer days
-    ) {
-        log.info("Admin retrieving most viewed properties (limit: {}, days: {})", limit, days);
-        List<PropertyAnalytics> results = analyticsService.getMostViewedProperties(limit, days);
-        return ResponseEntity.ok(results);
+            @RequestParam(value = "limit", defaultValue = "10") Integer limit,
+            @RequestParam(value = "days", defaultValue = "30") Integer days) {
+
+        log.info("Admin Request: Generating property view heat maps up to limit: {}, window: {} days", limit, days);
+        return ResponseEntity.ok(analyticsService.getMostViewedProperties(limit, days));
     }
 
     /**
-     * Get most active auctions.
-     * GET /api/admin/analytics/most-active-auctions?limit=10
+     * Returns the most active live or concluded auctions sorted by total bid interaction counts.
      */
     @GetMapping("/most-active-auctions")
     public ResponseEntity<List<AuctionAnalytics>> getMostActiveAuctions(
-            @RequestParam(required = false, defaultValue = "10") Integer limit
-    ) {
-        log.info("Admin retrieving most active auctions (limit: {})", limit);
-        List<AuctionAnalytics> results = analyticsService.getMostActiveAuctions(limit);
-        return ResponseEntity.ok(results);
+            @RequestParam(value = "limit", defaultValue = "10") Integer limit) {
+
+        log.info("Admin Request: Retrieving highest transactional volume auction listings up to limit: {}", limit);
+        return ResponseEntity.ok(analyticsService.getMostActiveAuctions(limit));
     }
 
     /**
-     * Get top bidders.
-     * GET /api/admin/analytics/top-bidders?limit=10
+     * Returns platform power users ranked by transaction counts and financial turnover volume.
      */
     @GetMapping("/top-bidders")
     public ResponseEntity<List<UserAnalytics>> getTopBidders(
-            @RequestParam(required = false, defaultValue = "10") Integer limit
-    ) {
-        log.info("Admin retrieving top bidders (limit: {})", limit);
-        List<UserAnalytics> results = analyticsService.getTopBidders(limit);
-        return ResponseEntity.ok(results);
+            @RequestParam(value = "limit", defaultValue = "10") Integer limit) {
+
+        log.info("Admin Request: Pulling investor profile billing leaderboards up to limit: {}", limit);
+        return ResponseEntity.ok(analyticsService.getTopBidders(limit));
     }
 
     /**
-     * Get daily engagement metrics.
-     * GET /api/admin/analytics/daily-metrics
+     * Get isolated daily engagement metrics.
      */
     @GetMapping("/daily-metrics")
     public ResponseEntity<Map<String, Object>> getDailyMetrics() {
-        log.info("Admin retrieving daily metrics");
+        log.info("Admin Request: Gathering dynamic real-time daily metrics.");
 
         Map<String, Object> metrics = new HashMap<>();
         metrics.put("daily_active_users", analyticsService.getDailyActiveUsers());
@@ -93,26 +85,26 @@ public class AdminAnalyticsController {
     }
 
     /**
-     * Get comprehensive dashboard data.
-     * GET /api/admin/analytics/dashboard
+     * Get comprehensive dashboard data payload optimized to feed complete front-end dashboard panels
+     * in a single client network request.
      */
     @GetMapping("/dashboard")
     public ResponseEntity<Map<String, Object>> getDashboardData() {
-        log.info("Admin retrieving dashboard data");
+        log.info("Admin Request: Compiling comprehensive data package.");
 
         Map<String, Object> dashboard = new HashMap<>();
 
-        // System stats
+        // 1. Structural KPIs
         dashboard.put("system_stats", analyticsService.getSystemStats());
 
-        // Daily metrics
+        // 2. Daily Snapshots
         Map<String, Object> dailyMetrics = new HashMap<>();
         dailyMetrics.put("active_users", analyticsService.getDailyActiveUsers());
         dailyMetrics.put("bids", analyticsService.getTodayBidCount());
         dailyMetrics.put("views", analyticsService.getDailyViewCount());
         dashboard.put("daily_metrics", dailyMetrics);
 
-        // Top performers
+        // 3. Leaderboards / Top Performers (Slices restricted to 5 items for payload efficiency)
         dashboard.put("most_viewed_properties", analyticsService.getMostViewedProperties(5, 30));
         dashboard.put("most_active_auctions", analyticsService.getMostActiveAuctions(5));
         dashboard.put("top_bidders", analyticsService.getTopBidders(5));

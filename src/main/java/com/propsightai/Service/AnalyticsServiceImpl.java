@@ -9,304 +9,223 @@ import com.propsightai.Model.Property;
 import com.propsightai.Model.User;
 import com.propsightai.Repository.*;
 import com.propsightai.Role.ActivityEventType;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.propsightai.Role.AuctionStatus;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class AnalyticsServiceImpl implements AnalyticsService {
 
-    private static final Logger logger = LoggerFactory.getLogger(AnalyticsServiceImpl.class);
+    private final UserRepository userRepository;
+    private final PropertyRepository propertyRepository;
+    private final AuctionRepository auctionRepository;
+    private final BidRepository bidRepository;
+    private final ActivityRepository activityRepository;
 
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private PropertyRepository propertyRepository;
-
-    @Autowired
-    private AuctionRepository auctionRepository;
-
-    @Autowired
-    private BidRepository bidRepository;
-
-    @Autowired
-    private ActivityRepository activityRepository;
+    private static final double PLATFORM_FEE_MULTIPLIER = 0.05;
 
     @Override
     public SystemStats getSystemStats() {
-        logger.info("Fetching system statistics");
-
+        log.info("Fetching real-time global system statistics matrix.");
         try {
             SystemStats stats = new SystemStats();
+            LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
+            LocalDateTime tomorrowStart = startOfDay.plusDays(1);
 
-            // User stats
-            long totalUsers = userRepository.count();
-            stats.setTotalUsers(totalUsers);
+            stats.setTotalUsers(userRepository.count());
+            stats.setActiveUsersToday(activityRepository.countUniqueUsersInDateRange(startOfDay, tomorrowStart));
+            stats.setTotalProperties(propertyRepository.count());
+            stats.setActiveAuctions(auctionRepository.countByStatusActive());
+            stats.setTotalBids(bidRepository.count());
 
-            // Daily active users
-            LocalDateTime today = LocalDateTime.now();
-            LocalDateTime startOfDay = today.withHour(0).withMinute(0).withSecond(0);
-            LocalDateTime endOfDay = today.withHour(23).withMinute(59).withSecond(59);
-            long activeUsersToday = activityRepository.countUniqueUsersInDateRange(startOfDay, endOfDay);
-            stats.setActiveUsersToday(activeUsersToday);
+            stats.setBidsToday(activityRepository.countEventsByTypeInDateRange(
+                    ActivityEventType.BID_PLACED, startOfDay, tomorrowStart));
+            stats.setPropertiesViewedToday(activityRepository.countEventsByTypeInDateRange(
+                    ActivityEventType.PROPERTY_VIEW, startOfDay, tomorrowStart));
+            stats.setTotalPropertiesViewed(activityRepository.countByEventType(ActivityEventType.PROPERTY_VIEW));
 
-            // Property stats
-            long totalProperties = propertyRepository.count();
-            stats.setTotalProperties(totalProperties);
+            Double totalBidVolume = bidRepository.sumAllBidAmounts();
+            stats.setRevenueEstimate(totalBidVolume != null ? totalBidVolume * PLATFORM_FEE_MULTIPLIER : 0.0);
 
-            // Auction stats
-            long activeAuctions = auctionRepository.countByStatusActive();
-            stats.setActiveAuctions(activeAuctions);
-
-            // Bid stats
-            long totalBids = bidRepository.count();
-            stats.setTotalBids(totalBids);
-
-            long bidsToday = activityRepository.countEventsByTypeInDateRange(
-                    ActivityEventType.BID_PLACED,
-                    startOfDay,
-                    endOfDay
-            );
-            stats.setBidsToday(bidsToday);
-
-            // View stats
-            long viewsToday = activityRepository.countEventsByTypeInDateRange(
-                    ActivityEventType.PROPERTY_VIEW,
-                    startOfDay,
-                    endOfDay
-            );
-            stats.setPropertiesViewedToday(viewsToday);
-
-            long totalViews = activityRepository.countByEventType(ActivityEventType.PROPERTY_VIEW);
-            stats.setTotalPropertiesViewed(totalViews);
-
-            // Revenue estimate (based on bids - simple calculation)
-            Double estimatedRevenue = bidRepository.findAll().stream()
-                    .filter(b -> b.getAmount() != null)
-                    .mapToDouble(b -> b.getAmount().doubleValue())
-                    .sum() * 0.05; // Assume 5% platform fee
-            stats.setRevenueEstimate(estimatedRevenue);
-
-            logger.info("System stats retrieved: {} users, {} properties, {} active auctions",
-                    totalUsers, totalProperties, activeAuctions);
             return stats;
-
         } catch (Exception e) {
-            logger.error("Error fetching system statistics", e);
-            return new SystemStats(); // Return empty stats on error
+            log.error("Fatal exception during system analytics calculation batch", e);
+            return new SystemStats();
         }
     }
 
     @Override
     public List<PropertyAnalytics> getMostViewedProperties(Integer limit, Integer days) {
-        logger.info("Fetching most viewed properties (limit: {}, days: {})", limit, days);
-
-        int viewLimit = limit != null && limit > 0 ? limit : 10;
-        int dayRange = days != null && days > 0 ? days : 30;
+        int viewLimit = (limit != null && limit > 0) ? limit : 10;
+        int dayRange = (days != null && days > 0) ? days : 30;
+        log.info("Fetching top viewed properties metadata. Limit: {}, Window: {} days", viewLimit, dayRange);
 
         try {
             LocalDateTime sinceDate = LocalDateTime.now().minusDays(dayRange);
-
             List<Object[]> viewData = activityRepository.getMostViewedProperties(
-                    ActivityEventType.PROPERTY_VIEW,
-                    sinceDate
-            );
+                    ActivityEventType.PROPERTY_VIEW, sinceDate, PageRequest.of(0, viewLimit));
+
+            if (viewData.isEmpty()) return Collections.emptyList();
+
+            // Extract IDs for Batch In-Clause Execution
+            List<Integer> propertyIds = viewData.stream().map(row -> ((Number) row[0]).intValue()).toList();
+
+            // Batch look up all required properties in 1 database trip
+            Map<Integer, Property> propertyMap = propertyRepository.findAllById(propertyIds).stream()
+                    .collect(Collectors.toMap(Property::getId, Function.identity()));
 
             List<PropertyAnalytics> analytics = new ArrayList<>();
-
             for (Object[] row : viewData) {
                 Integer propertyId = ((Number) row[0]).intValue();
                 Long viewCount = ((Number) row[1]).longValue();
 
-                Property property = propertyRepository.findById(propertyId).orElse(null);
+                Property property = propertyMap.get(propertyId);
                 if (property != null) {
                     PropertyAnalytics pa = new PropertyAnalytics();
                     pa.setPropertyId(propertyId);
                     pa.setPropertyTitle(property.getTitle());
                     pa.setViewCount(viewCount);
-                    
-                    // Implement click tracking - count interactions/clicks from activity events
-                    long clickCount = activityRepository.findAll().stream()
-                            .filter(activity -> activity.getPropertyId() != null && 
-                                    activity.getPropertyId().equals(propertyId) &&
-                                    activity.getEventType() != null &&
-                                    activity.getEventType().toString().equalsIgnoreCase("CLICK"))
-                            .count();
-                    pa.setClickCount(clickCount);
-                    
-                    pa.setBidCount(bidRepository.countByAuctionPropertyId(propertyId));
+
+                    // Scalar metrics remain fast, but entities are fully memory-cached now
+                    pa  .setClickCount(activityRepository.countClicksForProperty(propertyId, ActivityEventType.PROPERTY_CLICK));
+                    pa.setBidCount((long) bidRepository.countByAuctionPropertyId(propertyId));
                     analytics.add(pa);
                 }
-
-                if (analytics.size() >= viewLimit) break;
             }
-
-            logger.info("Found {} most viewed properties", analytics.size());
             return analytics;
-
         } catch (Exception e) {
-            logger.error("Error fetching most viewed properties", e);
+            log.error("Error building property analytics profile", e);
             return new ArrayList<>();
         }
     }
 
     @Override
     public List<AuctionAnalytics> getMostActiveAuctions(Integer limit) {
-        logger.info("Fetching most active auctions");
-
-        int auctionLimit = limit != null && limit > 0 ? limit : 10;
+        int auctionLimit = (limit != null && limit > 0) ? limit : 10;
+        log.info("Compiling most active auctions up to threshold limit: {}", auctionLimit);
 
         try {
-            List<Auction> auctions = auctionRepository.findAll().stream()
-                    .sorted((a1, a2) -> {
-                        long bids1 = bidRepository.countByAuctionId(a1.getId());
-                        long bids2 = bidRepository.countByAuctionId(a2.getId());
-                        return Long.compare(bids2, bids1); // Descending order
-                    })
-                    .limit(auctionLimit)
-                    .collect(Collectors.toList());
+            List<Object[]> activeAuctionData = bidRepository.findAuctionsOrderedByBidCount(PageRequest.of(0, auctionLimit));
+            if (activeAuctionData.isEmpty()) return Collections.emptyList();
+
+            // Extract IDs for Batch In-Clause execution
+            List<Integer> auctionIds = activeAuctionData.stream().map(row -> ((Number) row[0]).intValue()).toList();
+
+            // Batch fetch all auction entities with 1 single query assignment
+            Map<Integer, Auction> auctionMap = auctionRepository.findAllById(auctionIds).stream()
+                    .collect(Collectors.toMap(Auction::getId, Function.identity()));
 
             List<AuctionAnalytics> analytics = new ArrayList<>();
+            for (Object[] row : activeAuctionData) {
+                Integer auctionId = ((Number) row[0]).intValue();
+                Long bidCount = ((Number) row[1]).longValue();
 
-            for (Auction auction : auctions) {
-                AuctionAnalytics aa = new AuctionAnalytics();
-                aa.setAuctionId(auction.getId());
-                aa.setPropertyId(auction.getProperty() != null ? auction.getProperty().getId() : null);
-                aa.setPropertyTitle(auction.getProperty() != null ? auction.getProperty().getTitle() : "Unknown");
-                long bidCount = bidRepository.countByAuctionId(auction.getId());
-                aa.setBidCount((int) bidCount);
-                aa.setCurrentHighestBid(auction.getCurrentHighestBid() != null ?
-                        auction.getCurrentHighestBid().doubleValue() : 0.0);
-                aa.setStatus(auction.getStatus() != null ? auction.getStatus().toString() : "UNKNOWN");
+                Auction auction = auctionMap.get(auctionId);
+                if (auction != null) {
+                    AuctionAnalytics aa = new AuctionAnalytics();
+                    aa.setAuctionId(auctionId);
+                    aa.setPropertyId(auction.getProperty() != null ? auction.getProperty().getId() : null);
+                    aa.setPropertyTitle(auction.getProperty() != null ? auction.getProperty().getTitle() : "Unknown");
+                    aa.setBidCount(bidCount.intValue());
+                    aa.setCurrentHighestBid(auction.getCurrentHighestBid() != null ? auction.getCurrentHighestBid().doubleValue() : 0.0);
+                    aa.setStatus(auction.getStatus() != null ? auction.getStatus().name() : "UNKNOWN");
 
-                // Count distinct bidders
-                Long bidderCount = bidRepository.countDistinctBiddersByAuctionId(auction.getId());
-                aa.setBidderCount(bidderCount != null ? bidderCount.intValue() : 0);
+                    Long bidderCount = bidRepository.countDistinctBiddersByAuctionId(auctionId);
+                    aa.setBidderCount(bidderCount != null ? bidderCount.intValue() : 0);
 
-                analytics.add(aa);
+                    analytics.add(aa);
+                }
             }
-
-            logger.info("Found {} most active auctions", analytics.size());
             return analytics;
-
         } catch (Exception e) {
-            logger.error("Error fetching most active auctions", e);
+            log.error("Error generating auction data insights stream", e);
             return new ArrayList<>();
         }
     }
 
     @Override
     public List<UserAnalytics> getTopBidders(Integer limit) {
-        logger.info("Fetching top bidders");
-
-        int bidderLimit = limit != null && limit > 0 ? limit : 10;
+        int bidderLimit = (limit != null && limit > 0) ? limit : 10;
+        log.info("Aggregating system top platform bidders profile summary. Limit: {}", bidderLimit);
 
         try {
-            List<User> users = userRepository.findAll().stream()
-                    .map(user -> new AbstractMap.SimpleEntry<>(
-                            user,
-                            bidRepository.countByBidder_Id(user.getId())
-                    ))
-                    .sorted((e1, e2) -> Long.compare(e2.getValue(), e1.getValue()))
-                    .limit(bidderLimit)
-                    .map(AbstractMap.SimpleEntry::getKey)
-                    .collect(Collectors.toList());
+            List<Object[]> topBiddersData = bidRepository.findTopBiddersByBidCount(PageRequest.of(0, bidderLimit));
+            if (topBiddersData.isEmpty()) return Collections.emptyList();
+
+            // Extract User IDs for Batch Extraction
+            List<Integer> userIds = topBiddersData.stream().map(row -> ((Number) row[0]).intValue()).toList();
+
+            // Batch user profile initialization mapping
+            Map<Integer, User> userMap = userRepository.findAllById(userIds).stream()
+                    .collect(Collectors.toMap(User::getId, Function.identity()));
 
             List<UserAnalytics> analytics = new ArrayList<>();
+            for (Object[] row : topBiddersData) {
+                Integer userId = ((Number) row[0]).intValue();
+                Long totalBids = ((Number) row[1]).longValue();
 
-            for (User user : users) {
-                UserAnalytics ua = new UserAnalytics();
-                ua.setUserId(user.getId());
-                ua.setUserName(user.getName());
-                ua.setUserEmail(user.getEmail());
-                Integer totalBids = bidRepository.countByBidder_Id(user.getId());
-                ua.setTotalBids((int) totalBids);
-                
-                // Count successful bids (where user won the auction)
-                long successfulBids = bidRepository.findAll().stream()
-                        .filter(bid -> bid.getBidder().getId().equals(user.getId()) && 
-                                bid.getAuction().getWinner() != null &&
-                                bid.getAuction().getWinner().getId().equals(user.getId()))
-                        .count();
-                ua.setSuccessfulBids((int) successfulBids);
-                
-                // Calculate total amount spent
-                Double totalSpent = bidRepository.findAll().stream()
-                        .filter(bid -> bid.getBidder().getId().equals(user.getId()))
-                        .mapToDouble(bid -> bid.getAmount() != null ? bid.getAmount().doubleValue() : 0.0)
-                        .sum();
-                ua.setTotalSpent(totalSpent);
+                User user = userMap.get(userId);
+                if (user != null) {
+                    UserAnalytics ua = new UserAnalytics();
+                    ua.setUserId(userId);
+                    ua.setUserName(user.getName());
+                    ua.setUserEmail(user.getEmail());
+                    ua.setTotalBids(totalBids.intValue());
 
-                analytics.add(ua);
+                    ua.setSuccessfulBids(bidRepository.countSuccessfulBidsByBidder(userId));
+                    ua.setTotalSpent(bidRepository.sumTotalAmountSpentByBidder(userId));
+
+                    analytics.add(ua);
+                }
             }
-
-            logger.info("Found {} top bidders", analytics.size());
             return analytics;
-
         } catch (Exception e) {
-            logger.error("Error fetching top bidders", e);
+            log.error("Error mapping user dashboard metrics", e);
             return new ArrayList<>();
         }
     }
 
     @Override
     public long getDailyActiveUsers() {
-        logger.info("Fetching daily active users");
-
         try {
-            LocalDateTime today = LocalDateTime.now();
-            LocalDateTime startOfDay = today.withHour(0).withMinute(0).withSecond(0);
-            LocalDateTime endOfDay = today.withHour(23).withMinute(59).withSecond(59);
-
-            return activityRepository.countUniqueUsersInDateRange(startOfDay, endOfDay);
+            LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
+            return activityRepository.countUniqueUsersInDateRange(startOfDay, startOfDay.plusDays(1));
         } catch (Exception e) {
-            logger.error("Error fetching daily active users", e);
+            log.error("Error calculating daily active user count matrix", e);
             return 0;
         }
     }
 
     @Override
     public long getTodayBidCount() {
-        logger.info("Fetching today's bid count");
-
         try {
-            LocalDateTime today = LocalDateTime.now();
-            LocalDateTime startOfDay = today.withHour(0).withMinute(0).withSecond(0);
-            LocalDateTime endOfDay = today.withHour(23).withMinute(59).withSecond(59);
-
-            return activityRepository.countEventsByTypeInDateRange(
-                    ActivityEventType.BID_PLACED,
-                    startOfDay,
-                    endOfDay
-            );
+            LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
+            return activityRepository.countEventsByTypeInDateRange(ActivityEventType.BID_PLACED, startOfDay, startOfDay.plusDays(1));
         } catch (Exception e) {
-            logger.error("Error fetching today's bid count", e);
+            log.error("Error calculating daily transaction logs", e);
             return 0;
         }
     }
 
     @Override
     public long getDailyViewCount() {
-        logger.info("Fetching daily view count");
-
         try {
-            LocalDateTime today = LocalDateTime.now();
-            LocalDateTime startOfDay = today.withHour(0).withMinute(0).withSecond(0);
-            LocalDateTime endOfDay = today.withHour(23).withMinute(59).withSecond(59);
-
-            return activityRepository.countEventsByTypeInDateRange(
-                    ActivityEventType.PROPERTY_VIEW,
-                    startOfDay,
-                    endOfDay
-            );
+            LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
+            return activityRepository.countEventsByTypeInDateRange(ActivityEventType.PROPERTY_VIEW, startOfDay, startOfDay.plusDays(1));
         } catch (Exception e) {
-            logger.error("Error fetching daily view count", e);
+            log.error("Error tracking view counters", e);
             return 0;
         }
     }

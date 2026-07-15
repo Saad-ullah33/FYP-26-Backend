@@ -6,30 +6,46 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 
 @Repository
-public interface AuctionRepository extends JpaRepository<Auction,Integer> {
-    boolean existsByPropertyIdAndStatusIn(Integer propertyId, List<AuctionStatus> statuses);
-    List<Auction> findByStatusIn(List<AuctionStatus> statuses);
+public interface AuctionRepository extends JpaRepository<Auction, Integer> {
 
-    List<Auction> findByStatusAndStatusIn(AuctionStatus status, List<AuctionStatus> allowedStatuses);
+    // ---------------- ACTIVE/LIVE CHECK CONSTRAINTS ----------------
 
-    List<Auction> findByStatus(AuctionStatus status);
-    List<Auction> findByStatusAndEndTimeBefore(AuctionStatus status, LocalDateTime time);
+    boolean existsByPropertyIdAndIsDeletedFalseAndStatusIn(Integer propertyId, Collection<AuctionStatus> statuses);
 
-    long countByStatus(AuctionStatus status);
+    // ---------------- GLOBAL FETCHES (EXCLUDING SOFT-DELETED) ----------------
 
-    // Analytics queries
+    List<Auction> findAllByIsDeletedFalse();
+
+    List<Auction> findByStatusAndIsDeletedFalse(AuctionStatus status);
+
+    List<Auction> findByStatusInAndIsDeletedFalse(Collection<AuctionStatus> statuses);
+
+    // ---------------- USER DASHBOARD LOOKUPS ----------------
+
+    List<Auction> findByProperty_Owner_IdAndIsDeletedFalse(Integer userId);
+
+    List<Auction> findByProperty_Owner_IdAndStatusAndIsDeletedFalse(Integer userId, AuctionStatus status);
+
+    int countByProperty_Owner_IdAndIsDeletedFalse(Integer userId);
+
+    int countByProperty_Owner_IdAndStatusAndIsDeletedFalse(Integer userId, AuctionStatus status);
+
+    // ---------------- CRON / BATCH PROCESSING ----------------
+
+    // Used by background workers to look up auctions that hit their expiration time but haven't been finalized
+    List<Auction> findByStatusAndEndTimeBeforeAndIsDeletedFalse(AuctionStatus status, LocalDateTime time);
+
+    // ---------------- ANALYTICS & METRICS ----------------
+
+    long countByStatusAndIsDeletedFalse(AuctionStatus status);
+
     default long countByStatusActive() {
-        return countByStatus(AuctionStatus.ACTIVE);
+        return countByStatusAndIsDeletedFalse(AuctionStatus.ACTIVE);
     }
-    int countByProperty_Owner_Id(Integer ownerId);
 
-    int countByProperty_Owner_IdAndStatus(Integer ownerId, AuctionStatus status);
-
-    List<Auction> findByProperty_Owner_Id(Integer ownerId);
-
-    List<Auction> findByProperty_Owner_IdAndStatus(Integer ownerId, AuctionStatus status);
+    long countByStatus(AuctionStatus auctionStatus);
 }
-

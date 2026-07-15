@@ -38,4 +38,6 @@ public interface PropertyService {
 
     void enableAuctionForUserProperty(Long propertyId, Integer userId);
     Property updatePropertyFromDto(Integer id, com.propsightai.Dto.PropertyCreateDto dto, List<MultipartFile> images, Integer userId);
+
+    void verifyPropertyOwnership(Integer id, Integer id1);
 }

@@ -173,11 +173,23 @@ public class SecurityConfig {
                         .requestMatchers("/api/auctions/**").permitAll()
                         // WEBSOCKET
                         .requestMatchers("/ws/**").permitAll()
+                        .requestMatchers(
+                                "/api/properties/**",
+                                "/api/predictions/{propertyId}",
+                                "/api/predictions/{propertyId}/explanation",
+                                "/api/predictions/historical-trends/**",
+                                "/api/predictions/top-undervalued"
+                        ).permitAll()
+
+                        // ── CHANGED THIS LINE ──
+                        // Allow authenticated admin users through the filter;
+                        // @PreAuthorize on your controllers will perform the strict Role checks.
+                        .requestMatchers("/api/admin/**").authenticated()
+
+                        .requestMatchers("/api/user/dashboard/**", "/api/user/analytics/**").authenticated()
                         // EVERYTHING ELSE PROTECTED
                         .anyRequest().authenticated()
                 )
-                // Removed the broken .authenticationProvider() line.
-                // Spring links the constructed AuthenticationManager automatically.
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

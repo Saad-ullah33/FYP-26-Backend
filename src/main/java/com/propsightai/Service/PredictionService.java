@@ -1,7 +1,12 @@
 package com.propsightai.Service;
 
+import com.propsightai.Dto.BudgetSearchResponse;
+import com.propsightai.Dto.EstimationRequest;
 import com.propsightai.Dto.PredictionResponse;
 import com.propsightai.Model.Property;
+
+import java.util.List;
+import java.util.Map;
 
 public interface PredictionService {
 
@@ -27,4 +32,12 @@ public interface PredictionService {
      * @return accuracy percentage
      */
     Double getModelAccuracy();
+
+    List<Map<String, Object>> getHistoricalTrends(Integer propertyId);
+
+    List<Map<String, Object>> getTopUndervaluedDeals(int limit, String city);
+
+    List<BudgetSearchResponse> getPropertiesByBudgetWithPredictions(double minPrice, double maxPrice);
+
+    PredictionResponse estimateRawPropertyPrice(EstimationRequest request);
 }

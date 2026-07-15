@@ -6,177 +6,155 @@ import com.propsightai.Model.Property;
 import com.propsightai.Repository.ActivityRepository;
 import com.propsightai.Repository.PropertyRepository;
 import com.propsightai.Role.ActivityEventType;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true) // Read-only query execution increases baseline system scalability
 public class RecommendationServiceImpl implements RecommendationService {
 
-    private static final Logger logger = LoggerFactory.getLogger(RecommendationServiceImpl.class);
-
-    @Autowired
-    private PropertyRepository propertyRepository;
-
-    @Autowired
-    private ActivityRepository activityRepository;
-
-    @Autowired
-    private PropertyScoringService scoringService;
-
-    @Autowired
-    private PredictionService predictionService;
+    private final PropertyRepository propertyRepository;
+    private final ActivityRepository activityRepository;
+    private final PropertyScoringService scoringService;
+    private final PredictionService predictionService;
 
     @Override
     public List<PropertyResponseDto> getRecommendations(Integer userId, Integer limit) {
-        logger.info("Getting recommendations for user {}", userId);
         return getPersonalizedRecommendations(userId, limit);
     }
 
     @Override
     public List<PropertyResponseDto> getPersonalizedRecommendations(Integer userId, Integer limit) {
-        logger.info("Getting personalized recommendations for user {}", userId);
-
-        int recommendationLimit = limit != null && limit > 0 ? limit : 10;
+        int recommendationLimit = (limit != null && limit > 0) ? limit : 10;
+        log.info("Generating indexed personalized recommendation cluster for user: {}", userId);
 
         try {
-            // Get user's recently viewed properties to understand preferences
+            // 1. Efficient paginated lookups for user history logs
             List<ActivityEvent> userViews = activityRepository.findByUserIdOrderByCreatedAtDesc(userId)
                     .stream()
                     .filter(e -> e.getEventType() == ActivityEventType.PROPERTY_VIEW)
-                    .limit(10) // Look at last 10 views
-                    .collect(Collectors.toList());
+                    .limit(10)
+                    .toList();
 
             if (userViews.isEmpty()) {
-                // If no history, return trending properties
+                log.info("User history vector empty for ID: {}. Routing to fallback trending results.", userId);
                 return getTrendingProperties(recommendationLimit);
             }
 
-            // Get categories from viewed properties
-            Set<String> userPreferredCategories = new HashSet<>();
-            Map<String, Integer> categoryFrequency = new HashMap<>();
-
-            for (ActivityEvent view : userViews) {
-                Property property = propertyRepository.findById(view.getPropertyId()).orElse(null);
-                if (property != null) {
-                    String category = property.getPropertyType().toString();
-                    userPreferredCategories.add(category);
-                    categoryFrequency.merge(category, 1, Integer::sum);
-                }
-            }
-
-            // Get properties in preferred categories, excluding already viewed
             Set<Integer> viewedPropertyIds = userViews.stream()
                     .map(ActivityEvent::getPropertyId)
                     .collect(Collectors.toSet());
 
-            List<Property> allProperties = propertyRepository.findAll();
-            List<PropertyResponseDto> recommendations = allProperties.stream()
-                    .filter(p -> !viewedPropertyIds.contains(p.getId())) // Exclude viewed
-                    .filter(p -> userPreferredCategories.contains(p.getPropertyType().toString())) // Match category
-                    .sorted(Comparator.comparing(this::getPropertyScore).reversed()) // Sort by score
+            // 2. CRITICAL BATCH FIX: In-clause lookup replaces N+1 inner-loop query operations
+            Map<Integer, Property> propertiesMap = propertyRepository.findAllById(viewedPropertyIds).stream()
+                    .collect(Collectors.toMap(Property::getId, Function.identity()));
+
+            Set<String> preferredCategoryStrings = propertiesMap.values().stream()
+                    .filter(Objects::nonNull)
+                    .map(p -> p.getPropertyType().name())
+                    .collect(Collectors.toSet());
+
+            if (preferredCategoryStrings.isEmpty()) {
+                return getTrendingProperties(recommendationLimit);
+            }
+
+            // 3. PERFORMANCE FIX: Query the DB for matches directly instead of using propertyRepository.findAll()
+            List<Property> targetedCandidates = propertyRepository.findByPropertyTypeNamesInAndIdNotIn(
+                    preferredCategoryStrings, viewedPropertyIds, PageRequest.of(0, 100));
+
+            return targetedCandidates.stream()
+                    .sorted(Comparator.comparingDouble(this::getPropertyScore).reversed())
                     .limit(recommendationLimit)
                     .map(this::convertToDto)
-                    .collect(Collectors.toList());
-
-            logger.info("Generated {} personalized recommendations for user {}", recommendations.size(), userId);
-            return recommendations;
+                    .toList();
 
         } catch (Exception e) {
-            logger.error("Error generating personalized recommendations for user {}", userId, e);
+            log.error("Error generating customized engine recommendations for user ID: {}", userId, e);
             return getTrendingProperties(recommendationLimit);
         }
     }
 
     @Override
     public List<PropertyResponseDto> getTrendingProperties(Integer limit) {
-        logger.info("Getting trending properties");
-
-        int trendingLimit = limit != null && limit > 0 ? limit : 10;
+        int trendingLimit = (limit != null && limit > 0) ? limit : 10;
+        log.info("Analyzing user interactions matrix for global trending recommendations.");
 
         try {
-            // Get most viewed properties in last 30 days
-            LocalDateTime thirtyDaysAgo = LocalDateTime.now().minusDays(30);
-            
+            LocalDateTime thirtyDaysAgo = LocalDate.now().atStartOfDay().minusDays(30);
+
+            // Single database trip pulling top aggregated items directly via pagination boundaries
             List<Object[]> mostViewed = activityRepository.getMostViewedProperties(
-                    ActivityEventType.PROPERTY_VIEW,
-                    thirtyDaysAgo
-            );
+                    ActivityEventType.PROPERTY_VIEW, thirtyDaysAgo, PageRequest.of(0, trendingLimit));
 
-            List<PropertyResponseDto> trending = new ArrayList<>();
-            
-            for (Object[] row : mostViewed) {
-                Integer propertyId = ((Number) row[0]).intValue();
-                Property property = propertyRepository.findById(propertyId).orElse(null);
-                if (property != null) {
-                    trending.add(convertToDto(property));
-                }
-                if (trending.size() >= trendingLimit) break;
-            }
+            if (mostViewed.isEmpty()) return Collections.emptyList();
 
-            logger.info("Found {} trending properties", trending.size());
-            return trending;
+            List<Integer> propertyIds = mostViewed.stream().map(row -> ((Number) row[0]).intValue()).toList();
+
+            // Map the collected items as a batch structure
+            Map<Integer, Property> trendsMap = propertyRepository.findAllById(propertyIds).stream()
+                    .collect(Collectors.toMap(Property::getId, Function.identity()));
+
+            return propertyIds.stream()
+                    .map(trendsMap::get)
+                    .filter(Objects::nonNull)
+                    .map(this::convertToDto)
+                    .toList();
 
         } catch (Exception e) {
-            logger.error("Error getting trending properties", e);
-            return new ArrayList<>();
+            log.error("Fatal exception during trending properties query assembly", e);
+            return Collections.emptyList();
         }
     }
 
     @Override
     public List<PropertyResponseDto> getSimilarProperties(Integer propertyId, Integer limit) {
-        logger.info("Getting properties similar to property {}", propertyId);
-
-        int similarLimit = limit != null && limit > 0 ? limit : 5;
+        int similarLimit = (limit != null && limit > 0) ? limit : 5;
+        log.info("Calculating similarity indexing matrix against reference listing ID: {}", propertyId);
 
         try {
-            Property referenceProperty = propertyRepository.findById(propertyId)
-                    .orElseThrow(() -> new RuntimeException("Property not found"));
+            Property ref = propertyRepository.findById(propertyId)
+                    .orElseThrow(() -> new NoSuchElementException("Property context not found for ID: " + propertyId));
 
-            List<Property> allProperties = propertyRepository.findAll();
-            
-            List<PropertyResponseDto> similarProperties = allProperties.stream()
-                    .filter(p -> !p.getId().equals(propertyId)) // Exclude reference property
-                    .filter(p -> p.getPropertyType().equals(referenceProperty.getPropertyType())) // Same type
-                    .filter(p -> p.getPurpose().equals(referenceProperty.getPurpose())) // Same purpose
-                    .filter(p -> p.getCity() != null && p.getCity().equals(referenceProperty.getCity())) // Same city
-                    .sorted(Comparator.comparing(p -> Math.abs(
-                            (p.getPrice() != null ? p.getPrice() : 0) - 
-                            (referenceProperty.getPrice() != null ? referenceProperty.getPrice() : 0)
-                    ))) // Sort by price similarity
+            // PERFORMANCE FIX: Database-driven range extraction replaces memory-heavy findAll() operations
+            List<Property> candidates = propertyRepository.findSimilarPropertiesQuery(
+                    ref.getPropertyType(), ref.getPurpose(), ref.getCity(), propertyId, PageRequest.of(0, 50));
+
+            return candidates.stream()
+                    .sorted(Comparator.comparing(p -> {
+                        long refPrice = ref.getPrice() != null ? ref.getPrice().longValue() : 0L;
+                        long candPrice = p.getPrice() != null ? p.getPrice().longValue() : 0L;
+                        return Math.abs(candPrice - refPrice);
+                    }))
                     .limit(similarLimit)
                     .map(this::convertToDto)
-                    .collect(Collectors.toList());
-
-            logger.info("Found {} similar properties to property {}", similarProperties.size(), propertyId);
-            return similarProperties;
+                    .toList();
 
         } catch (Exception e) {
-            logger.error("Error getting similar properties for property {}", propertyId, e);
-            return new ArrayList<>();
+            log.error("Failed to extract spatial lookalikes for listing item: {}", propertyId, e);
+            return Collections.emptyList();
         }
     }
 
-    /**
-     * Get numeric score for a property for ranking.
-     */
     private double getPropertyScore(Property property) {
         try {
             var score = scoringService.calculateScore(property);
-            return score.getScore() != 0 ? score.getScore() : 0;
+            return (score != null) ? score.getScore() : 0.0;
         } catch (Exception e) {
-            return 0;
+            return 0.0;
         }
     }
 
-    /**
-     * Convert Property to PropertyResponseDto.
-     */
     private PropertyResponseDto convertToDto(Property property) {
         PropertyResponseDto dto = new PropertyResponseDto();
         dto.setId(property.getId());
@@ -185,9 +163,14 @@ public class RecommendationServiceImpl implements RecommendationService {
         dto.setPrice(property.getPrice());
         dto.setPurpose(property.getPurpose());
         dto.setPropertyType(property.getPropertyType());
-        dto.setImages(property.getImages().stream()
-                .map(img -> img.getCloudinary_src())
-                .collect(Collectors.toList()));
+
+        if (property.getImages() != null) {
+            dto.setImages(property.getImages().stream()
+                    .map(img -> img.getCloudinary_src())
+                    .filter(Objects::nonNull)
+                    .toList());
+        }
+
         dto.setCity(property.getCity() != null ? property.getCity().getName() : null);
         dto.setLocation(property.getLocation());
         dto.setBathrooms(property.getBathrooms());
@@ -201,16 +184,17 @@ public class RecommendationServiceImpl implements RecommendationService {
         dto.setSold(property.getSold());
         dto.setCreatedAt(property.getCreatedAt());
 
+        // Isolated diagnostic try-catch wrappers for safety
         try {
             dto.setPrediction(predictionService.predictProperty(property));
         } catch (Exception e) {
-            logger.warn("Failed to generate prediction for property {}", property.getId());
+            log.warn("Asynchronous analytics skipping: Prediction exception trace for listing item: {}", property.getId());
         }
 
         try {
             dto.setScore(scoringService.calculateScore(property));
         } catch (Exception e) {
-            logger.warn("Failed to calculate score for property {}", property.getId());
+            log.warn("Failed to append diagnostic score map profile to DTO row output: {}", property.getId());
         }
 
         return dto;

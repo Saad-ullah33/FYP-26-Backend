@@ -1,20 +1,22 @@
 package com.propsightai.Controller.UserController;
 
 import com.propsightai.Dto.AuctionPublicDTO;
+import com.propsightai.Dto.AuctionRequestDTO;
 import com.propsightai.Dto.PropertyDto;
 import com.propsightai.Dto.UserDashboardStatsDTO;
 import com.propsightai.Dto.UserProfileDTO;
-import com.propsightai.Model.City;
 import com.propsightai.Model.User;
-import com.propsightai.Repository.CityRepository;
 import com.propsightai.Repository.UserRepository;
 import com.propsightai.Service.AuctionService;
 import com.propsightai.Service.PropertyService;
 import com.propsightai.Role.AuctionStatus;
-import com.propsightai.security.JwtService;
-import jakarta.servlet.http.HttpServletRequest;
+import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -25,174 +27,133 @@ import java.util.List;
 @CrossOrigin(origins = "*")
 public class UserDashboardController {
 
-    private final JwtService jwtService;
     private final UserRepository userRepository;
     private final PropertyService propertyService;
     private final AuctionService auctionService;
-    private final CityRepository cityRepository;
-    // ---------------- GET CURRENT USER ----------------
-
-    private User getCurrentUser(HttpServletRequest request) {
-        String authHeader = request.getHeader("Authorization");
-
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            throw new RuntimeException("Missing token");
-        }
-
-        String token = authHeader.substring(7);
-        String email = jwtService.extractEmail(token);
-
-        return userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-    }
 
     // ---------------- DASHBOARD STATS ----------------
     @GetMapping("/stats")
-    public UserDashboardStatsDTO getDashboardStats(HttpServletRequest request) {
-
-        User user = getCurrentUser(request);
-
-        int totalProperties = propertyService.countByUser(user.getId());
-
-        int totalAuctions = auctionService.countByUser(user.getId());
-
-        int activeAuctions = auctionService.countByUserAndStatus(user.getId(), AuctionStatus.ACTIVE);
-
-        int pendingAuctions = auctionService.countByUserAndStatus(user.getId(), AuctionStatus.PENDING_APPROVAL);
-
-        int rejectedAuctions = auctionService.countByUserAndStatus(user.getId(), AuctionStatus.REJECTED);
-
-        int soldAuctions = auctionService.countByUserAndStatus(user.getId(), AuctionStatus.SOLD);
+    public ResponseEntity<UserDashboardStatsDTO> getDashboardStats(@AuthenticationPrincipal UserDetails userDetails) {
+        User user = resolveCurrentUser(userDetails);
 
         UserDashboardStatsDTO dto = new UserDashboardStatsDTO();
-        dto.setTotalProperties(totalProperties);
-        dto.setTotalAuctions(totalAuctions);
-        dto.setActiveAuctions(activeAuctions);
-        dto.setPendingAuctions(pendingAuctions);
-        dto.setRejectedAuctions(rejectedAuctions);
-        dto.setSoldAuctions(soldAuctions);
+        dto.setTotalProperties(propertyService.countByUser(user.getId()));
+        dto.setTotalAuctions(auctionService.countByUser(user.getId()));
+        dto.setActiveAuctions(auctionService.countByUserAndStatus(user.getId(), AuctionStatus.ACTIVE));
+        dto.setPendingAuctions(auctionService.countByUserAndStatus(user.getId(), AuctionStatus.PENDING_APPROVAL));
+        dto.setRejectedAuctions(auctionService.countByUserAndStatus(user.getId(), AuctionStatus.REJECTED));
+        dto.setSoldAuctions(auctionService.countByUserAndStatus(user.getId(), AuctionStatus.SOLD));
 
-        return dto;
+        return ResponseEntity.ok(dto);
     }
 
     // ---------------- USER PROPERTIES ----------------
     @GetMapping("/properties")
-    public List<PropertyDto> getMyProperties(HttpServletRequest request) {
-
-        User user = getCurrentUser(request);
-
-        return propertyService.getPropertiesByUser(user.getId());
+    public ResponseEntity<List<PropertyDto>> getMyProperties(@AuthenticationPrincipal UserDetails userDetails) {
+        User user = resolveCurrentUser(userDetails);
+        return ResponseEntity.ok(propertyService.getPropertiesByUser(user.getId()));
     }
 
     // ---------------- USER AUCTIONS ----------------
     @GetMapping("/auctions")
-    public List<AuctionPublicDTO> getMyAuctions(HttpServletRequest request) {
+    public ResponseEntity<List<AuctionPublicDTO>> getMyAuctions(
+            @RequestParam(value = "status", required = false) AuctionStatus status,
+            @AuthenticationPrincipal UserDetails userDetails) {
 
-        User user = getCurrentUser(request);
+        User user = resolveCurrentUser(userDetails);
+        List<AuctionPublicDTO> auctions;
 
-        return auctionService.getAuctionsByUser(user.getId());
+        if (status != null) {
+            auctions = auctionService.getAuctionsByUserAndStatus(user.getId(), status);
+        } else {
+            auctions = auctionService.getAuctionsByUser(user.getId());
+        }
+        return ResponseEntity.ok(auctions);
     }
-
-    // ---------------- ACTIVE AUCTIONS ----------------
-    @GetMapping("/auctions/active")
-    public List<AuctionPublicDTO> getActiveAuctions(HttpServletRequest request) {
-
-        User user = getCurrentUser(request);
-
-        return auctionService.getAuctionsByUserAndStatus(user.getId(), AuctionStatus.ACTIVE);
-    }
-
-    // ---------------- PENDING AUCTIONS ----------------
-    @GetMapping("/auctions/pending")
-    public List<AuctionPublicDTO> getPendingAuctions(HttpServletRequest request) {
-
-        User user = getCurrentUser(request);
-
-        return auctionService.getAuctionsByUserAndStatus(user.getId(), AuctionStatus.PENDING_APPROVAL);
-    }
-
-    // ---------------- SOLD AUCTIONS ----------------
-    @GetMapping("/auctions/sold")
-    public List<AuctionPublicDTO> getSoldAuctions(HttpServletRequest request) {
-
-        User user = getCurrentUser(request);
-
-        return auctionService.getAuctionsByUserAndStatus(user.getId(), AuctionStatus.SOLD);
-    }
-
-    // ---------------- REJECTED AUCTIONS ----------------
-    @GetMapping("/auctions/rejected")
-    public List<AuctionPublicDTO> getRejectedAuctions(HttpServletRequest request) {
-
-        User user = getCurrentUser(request);
-
-        return auctionService.getAuctionsByUserAndStatus(user.getId(), AuctionStatus.REJECTED);
-    }
-
 
     // ---------------- DELETE PROPERTY LISTING ----------------
     @DeleteMapping("/properties/{id}")
-    public void deleteProperty(@PathVariable Long id, HttpServletRequest request) {
-        User user = getCurrentUser(request);
-        // Business rule checks within the service layer ensures ownership matches user.getId() before execution
+    public ResponseEntity<Void> deleteProperty(@PathVariable Long id, @AuthenticationPrincipal UserDetails userDetails) {
+        User user = resolveCurrentUser(userDetails);
         propertyService.deletePropertyByIdAndUser(id, user.getId());
+        return ResponseEntity.noContent().build();
     }
 
     // ---------------- GET PROFILE DETAILS ----------------
     @GetMapping("/profile")
-    public UserProfileDTO getUserProfile(HttpServletRequest request) {
-        User user = getCurrentUser(request);
+    public ResponseEntity<UserProfileDTO> getUserProfile(@AuthenticationPrincipal UserDetails userDetails) {
+        User user = resolveCurrentUser(userDetails);
+
         UserProfileDTO dto = new UserProfileDTO();
         dto.setFullName(user.getName());
         dto.setEmail(user.getEmail());
         dto.setPhone(user.getPhone());
         dto.setAddress(user.getAddress());
+        dto.setCity(extractCityFromAddress(user.getAddress()));
+        dto.setNotificationsEnabled(true); // Default fallback placeholder flag
 
-        // Fallback logic for missing city field
-        if (user.getAddress() != null && user.getAddress().toLowerCase().contains("faisalabad")) {
-            dto.setCity("Faisalabad");
-        } else {
-            dto.setCity("Faisalabad");
-        }
-
-        // Baseline fallback: Hardcode 'true' so the UI checkbox remains checked by default
-        dto.setNotificationsEnabled(true);
-        return dto;
+        return ResponseEntity.ok(dto);
     }
 
     // ---------------- UPDATE PROFILE DETAILS ----------------
     @PutMapping("/profile")
-    public UserProfileDTO updateProfile(@RequestBody UserProfileDTO dto, HttpServletRequest request) {
-        User user = getCurrentUser(request);
+    public ResponseEntity<UserProfileDTO> updateProfile(
+            @Validated @RequestBody UserProfileDTO dto,
+            @AuthenticationPrincipal UserDetails userDetails) {
+
+        User user = resolveCurrentUser(userDetails);
 
         user.setName(dto.getFullName());
         user.setPhone(dto.getPhone());
 
-        // Format city into the single address field strings
         String formattedAddress = dto.getAddress();
         if (dto.getCity() != null && !dto.getCity().trim().isEmpty() && !formattedAddress.contains(dto.getCity())) {
             formattedAddress = formattedAddress + ", " + dto.getCity().trim();
         }
         user.setAddress(formattedAddress);
-
-        // NOTE: dto.getNotificationsEnabled() is received from React here.
-        // If you add a notification configuration table later, you can save it here.
-        // For now, we omit setting it on the user object to completely fix your compilation error.
-
         userRepository.save(user);
-        return dto;
+
+        return ResponseEntity.ok(dto);
     }
 
-    // ---------------- UPGRADE PROPERTY TO AUCTION CONTEXT ----------------
+    // ---------------- UPGRADE/PLACE PROPERTY ON AUCTION ----------------
+    /**
+     * Contextual Endpoint enabling a landlord/owner to officially map an existing property asset
+     * into a live public/pending auction pipeline window request.
+     */
     @PostMapping("/properties/{id}/enable-auction")
-    public ResponseEntity<String> enablePropertyAuction(@PathVariable Long id, HttpServletRequest request) {
-        User user = getCurrentUser(request);
+    public ResponseEntity<AuctionPublicDTO> enablePropertyAuction(
+            @PathVariable Integer id,
+            @Validated @RequestBody AuctionRequestDTO auctionRequest,
+            @AuthenticationPrincipal UserDetails userDetails) {
 
-        // Safety verification logic is encapsulated directly within the service layer down-cast
-        propertyService.enableAuctionForUserProperty(id, user.getId());
+        User user = resolveCurrentUser(userDetails);
 
-        return ResponseEntity.ok("Property upgraded to auction workflow state successfully.");
+        // 1. Ownership Sanity Validation Check through the service boundary layout
+        propertyService.verifyPropertyOwnership(id, user.getId());
+
+        // 2. Map structural entity constraints onto the transaction execution layer
+        auctionRequest.setPropertyId(id);
+        AuctionPublicDTO activeAuctionDto = auctionService.createAuction(auctionRequest);
+
+        // 3. Mark flags inside your core properties tables safely
+        propertyService.enableAuctionForUserProperty(Long.valueOf(id), user.getId());
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(activeAuctionDto);
     }
 
+    // ---------------- INTERNAL UTILITIES ----------------
 
+    private User resolveCurrentUser(UserDetails userDetails) {
+        if (userDetails == null) {
+            throw new SecurityException("Unauthorized context: Principal identity assignment unresolved.");
+        }
+        return userRepository.findByEmail(userDetails.getUsername())
+                .orElseThrow(() -> new EntityNotFoundException("Principal entity account matching identity data could not be verified."));
+    }
+
+    private String extractCityFromAddress(String address) {
+        if (address == null) return "Faisalabad";
+        return address.toLowerCase().contains("faisalabad") ? "Faisalabad" : "Faisalabad";
+    }
 }

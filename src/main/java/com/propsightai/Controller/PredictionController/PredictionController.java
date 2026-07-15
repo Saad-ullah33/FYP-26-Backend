@@ -1,5 +1,7 @@
 package com.propsightai.Controller.PredictionController;
 
+import com.propsightai.Dto.BudgetSearchResponse;
+import com.propsightai.Dto.EstimationRequest;
 import com.propsightai.Dto.PredictionResponse;
 import com.propsightai.Model.Property;
 import com.propsightai.Repository.PropertyRepository;
@@ -11,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -225,5 +228,95 @@ public class PredictionController {
             log.error("Error getting accuracy check for property {}", propertyId, e);
             return ResponseEntity.internalServerError().body(Map.of("error", "Error fetching accuracy data"));
         }
+    }
+
+
+
+    /**
+     * Get historical price prediction trends for a property
+     * GET /api/predictions/historical-trends/{propertyId}
+     */
+    @GetMapping("/historical-trends/{propertyId}")
+    public ResponseEntity<?> getHistoricalTrends(@PathVariable Integer propertyId) {
+        log.info("Fetching historical price trends for property ID: {}", propertyId);
+
+        try {
+            propertyRepository.findById(propertyId)
+                    .orElseThrow(() -> new IllegalArgumentException("Property not found"));
+
+            // Fetching data formatted for frontend charting libraries (e.g., Chart.js or Recharts)
+            java.util.List<Map<String, Object>> trendData = predictionService.getHistoricalTrends(propertyId);
+
+            return ResponseEntity.ok(Map.of(
+                    "propertyId", propertyId,
+                    "currency", "PKR",
+                    "timeline", trendData
+            ));
+        } catch (IllegalArgumentException e) {
+            log.warn("Property not found for historical trends: {}", propertyId);
+            return ResponseEntity.notFound().build();
+        } catch (Exception e) {
+            log.error("Error fetching historical trends for property {}", propertyId, e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "Error generating historical trend metrics"));
+        }
+    }
+
+    /**
+     * Get top undervalued properties (Where AI Predicted Price > Listing/Asking Price)
+     * GET /api/predictions/top-undervalued
+     */
+    @GetMapping("/top-undervalued")
+    public ResponseEntity<?> getTopUndervaluedProperties(
+            @RequestParam(defaultValue = "10") int limit,
+            @RequestParam(required = false) String city
+    ) {
+        log.info("Fetching top undervalued properties. Limit: {}, City filter: {}", limit, city);
+
+        try {
+            // Service calculates profit margin/spread and filters properties
+            java.util.List<Map<String, Object>> undervaluedDeals = predictionService.getTopUndervaluedDeals(limit, city);
+
+            return ResponseEntity.ok(Map.of(
+                    "filter_city", city != null ? city : "All",
+                    "total_deals_found", undervaluedDeals.size(),
+                    "deals", undervaluedDeals,
+                    "timestamp", System.currentTimeMillis()
+            ));
+        } catch (Exception e) {
+            log.error("Error fetching undervalued investment items", e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "Error analyzing undervalued market items"));
+        }
+    }
+    @GetMapping("/faisalabad-sectors")
+    public ResponseEntity<List<String>> getFaisalabadSectors() {
+        return ResponseEntity.ok(List.of(
+                "DHA Faisalabad",
+                "Kohinoor City",
+                "People's Colony",
+                "Madina Town",
+                "Canal Road",
+                "Sargodha Road",
+                "Samundri Road"
+        ));
+    }
+
+    /**
+     * Search properties within a specific budget range and attach predictive metrics.
+     * GET /api/predictions/search-by-budget
+     */
+    @GetMapping("/search-by-budget")
+    public ResponseEntity<List<BudgetSearchResponse>> searchByBudget(
+            @RequestParam double minPrice,
+            @RequestParam double maxPrice) {
+        return ResponseEntity.ok(predictionService.getPropertiesByBudgetWithPredictions(minPrice, maxPrice));
+    }
+
+    /**
+     * Generate instant on-the-fly valuation metrics for unlisted raw property inputs.
+     * POST /api/predictions/estimate-price
+     */
+    @PostMapping("/estimate-price")
+    public ResponseEntity<PredictionResponse> estimatePrice(@RequestBody EstimationRequest request) {
+        return ResponseEntity.ok(predictionService.estimateRawPropertyPrice(request));
     }
 }

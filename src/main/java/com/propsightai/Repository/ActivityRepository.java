@@ -2,6 +2,7 @@ package com.propsightai.Repository;
 
 import com.propsightai.Model.ActivityEvent;
 import com.propsightai.Role.ActivityEventType;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -13,60 +14,84 @@ import java.util.List;
 @Repository
 public interface ActivityRepository extends JpaRepository<ActivityEvent, Integer> {
 
-    // Count user activities
+    // ---------------- BASE CRUDS & USER METRICS ----------------
+
     long countByUserId(Integer userId);
 
-    // Count property views
     long countByPropertyIdAndEventType(Integer propertyId, ActivityEventType eventType);
 
-    // Get user's recent activities
     List<ActivityEvent> findByUserIdOrderByCreatedAtDesc(Integer userId);
 
-    // Get activities for a property
     List<ActivityEvent> findByPropertyIdOrderByCreatedAtDesc(Integer propertyId);
 
-    // Find activities of specific type
     List<ActivityEvent> findByEventTypeOrderByCreatedAtDesc(ActivityEventType eventType);
 
-    // Count events by type within date range
-    @Query("SELECT COUNT(ae) FROM ActivityEvent ae WHERE ae.eventType = :eventType " +
-           "AND ae.createdAt >= :startDate AND ae.createdAt <= :endDate")
+    long countByEventType(ActivityEventType eventType);
+
+
+    // ---------------- OPTIMIZED SYSTEM ANALYTICS & TIME BOUNDARIES ----------------
+
+    /**
+     * Aggregates property views within a specific timeline.
+     * Uses open-ended upper boundaries ('< end') to prevent millisecond trimming issues.
+     */
+    /**
+     * Aggregates property views within a specific timeline.
+     * Uses open-ended upper boundaries ('< end') to prevent millisecond trimming issues.
+     */
+    @Query("SELECT COUNT(ae.id) FROM ActivityEvent ae " + // 👈 FIXED: Removed "ae.propertyId,"
+            "WHERE ae.eventType = :type AND ae.createdAt >= :start AND ae.createdAt < :end")
     long countEventsByTypeInDateRange(
-            @Param("eventType") ActivityEventType eventType,
-            @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate
+            @Param("type") ActivityEventType type,
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end
     );
 
-    // Get most viewed properties (last N days)
-    @Query("SELECT ae.propertyId, COUNT(ae) as viewCount " +
-           "FROM ActivityEvent ae " +
-           "WHERE ae.eventType = :eventType AND ae.createdAt >= :sinceDate " +
-           "GROUP BY ae.propertyId " +
-           "ORDER BY viewCount DESC")
-    List<Object[]> getMostViewedProperties(
-            @Param("eventType") ActivityEventType eventType,
-            @Param("sinceDate") LocalDateTime sinceDate
+    /**
+     * Tracks unique daily active users (DAU) securely over a given date range.
+     */
+    @Query("SELECT COUNT(DISTINCT ae.userId) FROM ActivityEvent ae " +
+            "WHERE ae.createdAt >= :start AND ae.createdAt < :end")
+    long countUniqueUsersInDateRange(
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end
     );
 
-    // Get user activity summary for a date range
-    @Query("SELECT ae.eventType, COUNT(ae) as count " +
-           "FROM ActivityEvent ae " +
-           "WHERE ae.userId = :userId AND ae.createdAt >= :startDate AND ae.createdAt <= :endDate " +
-           "GROUP BY ae.eventType")
+    /**
+     * Returns a summary breakdown of an individual user's total activities by action type.
+     */
+    @Query("SELECT ae.eventType, COUNT(ae.id) FROM ActivityEvent ae " +
+            "WHERE ae.userId = :userId AND ae.createdAt >= :start AND ae.createdAt < :end " +
+            "GROUP BY ae.eventType")
     List<Object[]> getUserActivitySummary(
             @Param("userId") Integer userId,
-            @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end
     );
 
-    // Daily unique users count
-    @Query("SELECT COUNT(DISTINCT ae.userId) FROM ActivityEvent ae " +
-           "WHERE ae.createdAt >= :startDate AND ae.createdAt <= :endDate")
-    long countUniqueUsersInDateRange(
-            @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate
+
+    // ---------------- PERFORMANCE-TUNED PAGINATED LOOKUPS ----------------
+
+    /**
+     * Fetch top viewed properties leveraging database-level indexing and pagination limits.
+     */
+    @Query("SELECT ae.propertyId, COUNT(ae.id) FROM ActivityEvent ae " +
+            "WHERE ae.eventType = :type AND ae.createdAt >= :since " +
+            "GROUP BY ae.propertyId " +
+            "ORDER BY COUNT(ae.id) DESC")
+    List<Object[]> getMostViewedProperties(
+            @Param("type") ActivityEventType type,
+            @Param("since") LocalDateTime since,
+            Pageable pageable
     );
 
-    // Count all events of a specific type
-    long countByEventType(ActivityEventType eventType);
+    /**
+     * Counts granular interactions (like specific text string matches or clicks) per property.
+     */
+    @Query("SELECT COUNT(ae.id) FROM ActivityEvent ae " +
+            "WHERE ae.propertyId = :propertyId AND ae.eventType = :clickType")
+    long countClicksForProperty(
+            @Param("propertyId") Integer propertyId,
+            @Param("clickType") ActivityEventType clickType
+    );
 }

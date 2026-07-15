@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 
 @Repository
@@ -50,4 +51,17 @@ public interface PropertyRepository extends JpaRepository<Property,Integer> {
     @Modifying
     @Query(value = "DELETE FROM auctions WHERE property_id = :propertyId", nativeQuery = true)
     void deleteAuctionRecordsByPropertyId(@Param("propertyId") Integer propertyId);
+    @Query("SELECT p FROM Property p WHERE p.id NOT IN :excludedIds AND FUNCTION('KEY_ENUM_TO_STRING_OR_CAST', p.propertyType) IN :types")
+    List<Property> findByPropertyTypeNamesInAndIdNotIn(
+            @Param("types") Collection<String> types,
+            @Param("excludedIds") Collection<Integer> excludedIds,
+            Pageable pageable);
+
+    @Query("SELECT p FROM Property p WHERE p.propertyType = :type AND p.purpose = :purpose AND p.city = :city AND p.id <> :excludeId")
+    List<Property> findSimilarPropertiesQuery(
+            @Param("type") Object type,
+            @Param("purpose") Object purpose,
+            @Param("city") Object city,
+            @Param("excludeId") Integer excludeId,
+            Pageable pageable);
 }
