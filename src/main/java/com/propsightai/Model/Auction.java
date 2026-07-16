@@ -48,6 +48,7 @@ public class Auction {
 
     @JsonIgnore
     @OneToMany(mappedBy = "auction", cascade = CascadeType.ALL, orphanRemoval = true )
+    @Builder.Default
     private List<Bid> bids = new ArrayList<>();
 
 
